@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sam — Mission Parivartan English Tutor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-indigo-100 via-amber-50 to-rose-100 flex justify-center p-3">
+
+<div class="w-full max-w-2xl flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/60" style="height:92vh">
+
+  <!-- Header -->
+  <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white px-5 py-4 flex items-center gap-3">
+    <div class="w-11 h-11 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-indigo-900 flex items-center justify-center text-xl font-bold shrink-0 shadow-md ring-2 ring-white/40">S</div>
+    <div class="flex-1 min-w-0">
+      <div class="font-semibold leading-tight">Sam · English Friend</div>
+      <div class="text-indigo-200 text-xs">Mission Parivartan</div>
+    </div>
+    <div id="timerChip" class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100" title="Aaj ka goal: 30 minute">⏱ 0/30 min</div>
+    <button id="voiceBtn" class="text-sm px-3 py-1.5 rounded-full font-medium bg-amber-400 text-indigo-900">🔊 Voice on</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1.5 px-3 py-2 bg-indigo-50 overflow-x-auto" id="tabs">
+    <button data-mode="chat" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-indigo-700 text-white">Chat</button>
+    <button data-mode="practice" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Practice</button>
+    <button data-mode="reading" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Reading</button>
+    <button data-mode="writing" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Writing</button>
+    <button id="progressBtn" class="text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-amber-400 text-indigo-900">📊 My Progress</button>
+    <button id="restartBtn" class="text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-slate-500 border border-slate-200 ml-auto">Restart</button>
+  </div>
+
+  <!-- Chat area -->
+  <div id="chatArea" class="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gradient-to-b from-amber-50/80 to-orange-50/50"></div>
+
+  <!-- Note -->
+  <div id="noteLine" class="hidden px-4 py-2 text-xs text-amber-700 bg-amber-100"></div>
+
+  <!-- Input -->
+  <div class="p-3 bg-white border-t border-slate-100 flex items-end gap-2">
+    <button id="micBtn" class="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600" title="Tap to speak">🎤</button>
+    <textarea id="inputBox" rows="1" placeholder="Type your answer in English…" class="flex-1 resize-none border border-slate-200 rounded-2xl px-4 py-2.5 focus:outline-none focus:border-indigo-400" style="max-height:8rem"></textarea>
+    <button id="sendBtn" class="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-2xl font-medium shrink-0 disabled:opacity-40 shadow-md">Send</button>
+  </div>
+</div>
+
+<script>
+const GREETING = "Hello! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nLet's start easy. What is your name?";
+
+const MODE_MESSAGE = {
+  chat: "Sam, let us talk!",
+  practice: "Sam, I want to practise sentences.",
+  reading: "Sam, can we do reading today?",
+  writing: "Sam, I want to practise writing."
+};
+
+let messages = [];        // {role, content} — sent to the server
+let mode = "chat";
+let loading = false;
+let speakOn = true;
+let listening = false;
+let startTime = null;
+const GOAL_MIN = 30;
+let chosenVoice = null;
+
+const chatArea = document.getElementById("chatArea");
+const inputBox = document.getElementById("inputBox");
+const sendBtn = document.getElementById("sendBtn");
+const micBtn = document.getElementById("micBtn");
+const voiceBtn = document.getElementById("voiceBtn");
+const noteLine = document.getElementById("noteLine");
+const timerChip = document.getElementById("timerChip");
+
+// ---------- helpers ----------
+function plain(t){return t.replace(/\*\*/g,"").replace(/\*/g,"").replace(/`/g,"").replace(/^#+\s*/gm,"").replace(/^\s*[-•]\s+/gm,"");}
+function forSpeech(t){return plain(t).replace(/_{2,}/g,"").replace(/_/g," ").replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}]/gu,"");}
+
+function pickVoice(){
+  if(!window.speechSynthesis) return;
+  const voices = speechSynthesis.getVoices();
+  if(!voices.length) return;
+  const en = voices.filter(v=>/^en/i.test(v.lang));
+  const pool = en.length?en:voices;
+  const prefer=[/neerja|heera|sonia|libby|aria|jenny|samantha|karen|moira|tessa|fiona|serena|ava|zira/i,/female/i,/google (uk|us) english/i];
+  for(const rx of prefer){const hit=pool.find(v=>rx.test(v.name));if(hit){chosenVoice=hit;return;}}
+  const male=/male|rishi|ravi|daniel|david|mark|alex|fred|george|oliver|thomas/i;
+  chosenVoice = pool.find(v=>!male.test(v.name))||pool[0];
+}
+if(window.speechSynthesis){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
+
+function speak(text){
+  try{
+    if(!speakOn||!window.speechSynthesis)return;
+    const u=new SpeechSynthesisUtterance(forSpeech(text));
+    if(chosenVoice)u.voice=chosenVoice;
+    u.lang=(chosenVoice&&chosenVoice.lang)||"en-IN";
+    u.rate=0.92;u.pitch=1.15;
+    speechSynthesis.cancel();speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+function bubble(role,content){
+  const wrap=document.createElement("div");
+  wrap.className="flex "+(role==="user"?"justify-end":"justify-start");
+  const b=document.createElement("div");
+  b.className="max-w-[85%] px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed "+
+    (role==="user"
+      ?"bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-br-sm shadow-sm"
+      :"bg-white text-slate-800 border border-amber-100 rounded-bl-sm shadow-sm");
+  b.textContent=role==="assistant"?plain(content):content;
+  wrap.appendChild(b);chatArea.appendChild(wrap);
+  chatArea.scrollTop=chatArea.scrollHeight;
+  return wrap;
+}
+
+function typing(on){
+  let t=document.getElementById("typingBubble");
+  if(on&&!t){
+    t=document.createElement("div");t.id="typingBubble";t.className="flex justify-start";
+    t.innerHTML='<div class="bg-white text-slate-400 border border-amber-100 px-4 py-2.5 rounded-2xl rounded-bl-sm shadow-sm">Sam is typing…</div>';
+    chatArea.appendChild(t);chatArea.scrollTop=chatArea.scrollHeight;
+  }else if(!on&&t){t.remove();}
+}
+
+function note(msg){
+  if(!msg){noteLine.classList.add("hidden");noteLine.textContent="";return;}
+  noteLine.textContent=msg;noteLine.classList.remove("hidden");
+}
+
+function updateTimer(){
+  if(!startTime)return;
+  const m=Math.floor((Date.now()-startTime)/60000);
+  if(m>=GOAL_MIN){
+    timerChip.textContent="🔥 "+m+" min";
+    timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-emerald-400 text-emerald-950";
+  }else{
+    timerChip.textContent="⏱ "+m+"/"+GOAL_MIN+" min";
+  }
+}
+setInterval(updateTimer,15000);
+
+// ---------- core send ----------
+async function send(text){
+  const content=(text!==undefined?text:inputBox.value).trim();
+  if(!content||loading)return;
+  if(!startTime)startTime=Date.now();
+  inputBox.value="";note("");
+  messages.push({role:"user",content});
+  bubble("user",content);
+  loading=true;sendBtn.disabled=true;typing(true);
+  try{
+    const r=await fetch("/api/chat",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({messages,mode})
+    });
+    const data=await r.json();
+    const reply=(data&&data.text)||"Sorry, kuch problem ho gayi. Please try again!";
+    messages.push({role:"assistant",content:reply});
+    typing(false);bubble("assistant",reply);speak(reply);
+  }catch(e){
+    typing(false);
+    const fallback="Sorry, network problem lag rahi hai. Please try again!";
+    messages.push({role:"assistant",content:fallback});
+    bubble("assistant",fallback);
+  }finally{
+    loading=false;sendBtn.disabled=false;
+  }
+}
+
+// ---------- UI events ----------
+sendBtn.addEventListener("click",()=>send());
+inputBox.addEventListener("keydown",(e)=>{
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
+});
+
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    if(loading)return;
+    mode=btn.dataset.mode;
+    document.querySelectorAll(".tab").forEach(b=>{
+      b.className="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium "+
+        (b===btn?"bg-indigo-700 text-white":"bg-white text-indigo-700 border border-indigo-200");
+    });
+    micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg "+
+      (mode==="writing"?"bg-slate-50 text-slate-300":"bg-slate-100 text-slate-600");
+    note("");
+    if(MODE_MESSAGE[mode])send(MODE_MESSAGE[mode]);
+  });
+});
+
+document.getElementById("progressBtn").addEventListener("click",()=>{
+  if(!loading)send("Sam, show my progress card please.");
+});
+
+document.getElementById("restartBtn").addEventListener("click",()=>{
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  messages=[];mode="chat";startTime=null;
+  timerChip.textContent="⏱ 0/30 min";
+  timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100";
+  document.querySelectorAll(".tab").forEach((b,i)=>{
+    b.className="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium "+
+      (b.dataset.mode==="chat"?"bg-indigo-700 text-white":"bg-white text-indigo-700 border border-indigo-200");
+  });
+  micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";
+  chatArea.innerHTML="";note("");
+  bubble("assistant",GREETING);
+  speak(GREETING);
+});
+
+voiceBtn.addEventListener("click",()=>{
+  speakOn=!speakOn;
+  voiceBtn.textContent=speakOn?"🔊 Voice on":"🔇 Voice off";
+  voiceBtn.className="text-sm px-3 py-1.5 rounded-full font-medium "+(speakOn?"bg-amber-400 text-indigo-900":"bg-indigo-500 text-white");
+  if(!speakOn&&window.speechSynthesis)speechSynthesis.cancel();
+});
+
+// ---------- mic ----------
+micBtn.addEventListener("click",()=>{
+  if(loading)return;
+  if(mode==="writing"){
+    note("Writing practice typing se hoti hai! 😊 Spelling ki practice ke liye. Bolne ke liye Chat ya Practice tab use karo.");
+    return;
+  }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){note("Voice typing Chrome browser mein sabse acha chalta hai. Abhi type kar sakte ho!");return;}
+  try{
+    const r=new SR();
+    r.lang="en-IN";r.interimResults=false;r.maxAlternatives=1;
+    listening=true;
+    micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-emerald-500 text-white";
+    r.onresult=(e)=>{
+      const t=e.results[0][0].transcript;
+      inputBox.value=(inputBox.value?inputBox.value+" ":"")+t;
+    };
+    r.onerror=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";note("Sun nahi paya, phir se try karo ya type karo.");};
+    r.onend=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";};
+    r.start();
+  }catch(e){listening=false;}
+});
+
+// ---------- boot ----------
+bubble("assistant",GREETING);
+// (Browsers block audio before first interaction, so the very first greeting is silent by design.)
+</script>
+</body>
+</html>
