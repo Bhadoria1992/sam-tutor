@@ -8,17 +8,51 @@
 </head>
 <body class="min-h-screen bg-gradient-to-br from-indigo-100 via-amber-50 to-rose-100 flex justify-center p-3">
 
-<div class="w-full max-w-2xl flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/60" style="height:92vh">
+<!-- ================= LOGIN SCREEN (shown until the student logs in) ================= -->
+<div id="loginScreen" class="w-full max-w-sm flex flex-col justify-center">
+  <div class="bg-white rounded-3xl shadow-2xl border border-white/60 p-7">
+    <div class="flex flex-col items-center mb-6">
+      <div class="w-16 h-16 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-indigo-900 flex items-center justify-center text-3xl font-bold shadow-md ring-4 ring-white/60">S</div>
+      <div class="mt-3 text-xl font-semibold text-indigo-900">Sam · सैम</div>
+      <div class="text-sm text-slate-500">Tumhara English friend</div>
+    </div>
+
+    <label class="block text-sm font-medium text-slate-700 mb-1">Mobile number</label>
+    <input id="loginNumber" type="tel" inputmode="numeric" autocomplete="username"
+      placeholder="Apna mobile number"
+      class="w-full border border-slate-200 rounded-2xl px-4 py-3 mb-4 focus:outline-none focus:border-indigo-400" />
+
+    <label class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password"
+      placeholder="Apna password"
+      class="w-full border border-slate-200 rounded-2xl px-4 py-3 mb-5 focus:outline-none focus:border-indigo-400" />
+
+    <button id="loginBtn"
+      class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3 rounded-2xl font-semibold shadow-md disabled:opacity-50">
+      Start 🚀
+    </button>
+
+    <div id="loginError" class="hidden mt-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2"></div>
+
+    <div class="mt-5 text-center text-xs text-slate-400">
+      Password bhool gaye? Apne teacher se pucho.
+    </div>
+  </div>
+</div>
+
+<!-- ================= MAIN APP (hidden until logged in) ================= -->
+<div id="appRoot" class="hidden w-full max-w-2xl flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/60" style="height:92vh">
 
   <!-- Header -->
   <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white px-5 py-4 flex items-center gap-3">
     <div class="w-11 h-11 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-indigo-900 flex items-center justify-center text-xl font-bold shrink-0 shadow-md ring-2 ring-white/40">S</div>
     <div class="flex-1 min-w-0">
       <div class="font-semibold leading-tight">Sam · English Friend</div>
-      <div class="text-indigo-200 text-xs">Mission Parivartan</div>
+      <div id="headerName" class="text-indigo-200 text-xs">Mission Parivartan</div>
     </div>
     <div id="timerChip" class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100" title="Aaj ka goal: 30 minute">⏱ 0/30 min</div>
     <button id="voiceBtn" class="text-sm px-3 py-1.5 rounded-full font-medium bg-amber-400 text-indigo-900">🔊 Voice on</button>
+    <button id="logoutBtn" class="text-sm px-2.5 py-1.5 rounded-full font-medium bg-indigo-800/60 text-indigo-100 shrink-0" title="Logout">↪</button>
   </div>
 
   <!-- Tabs -->
@@ -46,7 +80,16 @@
 </div>
 
 <script>
-const GREETING = "Hello! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nLet's start easy. What is your name?";
+let student = null;   // filled in after login: {student_id, name, class, district, xp_total}
+let authToken = null; // signed login token, sent with every request
+
+// Sam already knows their name now, so he no longer has to ask for it.
+function greetingText(){
+  const first = student && student.name ? String(student.name).trim().split(/\s+/)[0] : null;
+  return first
+    ? "Hello " + first + "! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nBatao, aaj tumhara din kaisa tha?"
+    : "Hello! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nLet's start easy. What is your name?";
+}
 
 const MODE_MESSAGE = {
   chat: "Sam, let us talk!",
@@ -153,7 +196,7 @@ async function send(text){
     const r=await fetch("/api/chat",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({messages,mode})
+      body:JSON.stringify({messages,mode,token:authToken})
     });
     const data=await r.json();
     const reply=(data&&data.text)||"Sorry, kuch problem ho gayi. Please try again!";
@@ -205,8 +248,9 @@ document.getElementById("restartBtn").addEventListener("click",()=>{
   });
   micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";
   chatArea.innerHTML="";note("");
-  bubble("assistant",GREETING);
-  speak(GREETING);
+  const g=greetingText();
+  bubble("assistant",g);
+  speak(g);
 });
 
 voiceBtn.addEventListener("click",()=>{
@@ -240,9 +284,91 @@ micBtn.addEventListener("click",()=>{
   }catch(e){listening=false;}
 });
 
+// ---------- login ----------
+const loginScreen   = document.getElementById("loginScreen");
+const appRoot       = document.getElementById("appRoot");
+const loginBtn      = document.getElementById("loginBtn");
+const loginNumber   = document.getElementById("loginNumber");
+const loginPassword = document.getElementById("loginPassword");
+const loginError    = document.getElementById("loginError");
+
+function showLoginError(msg){
+  loginError.textContent = msg;
+  loginError.classList.remove("hidden");
+}
+
+async function doLogin(){
+  const number = loginNumber.value.trim();
+  const pass   = loginPassword.value;
+  if(!number || !pass){ showLoginError("Number aur password dono bharo."); return; }
+
+  loginError.classList.add("hidden");
+  loginBtn.disabled = true;
+  loginBtn.textContent = "Checking…";
+
+  try{
+    const r = await fetch("/api/login",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ login_number: number, password: pass })
+    });
+    const data = await r.json();
+
+    if(!data || !data.ok){
+      showLoginError((data && data.message) || "Login nahi hua. Phir se try karo.");
+      return;
+    }
+
+    // Remember the login for this browser tab so a refresh doesn't log them out.
+    // sessionStorage (not localStorage) = cleared when the tab closes, which is
+    // safer on a shared or school phone.
+    sessionStorage.setItem("sam_token", data.token);
+    sessionStorage.setItem("sam_student", JSON.stringify(data.student));
+    startApp(data.token, data.student);
+
+  }catch(e){
+    showLoginError("Network problem. Internet check karke phir try karo.");
+  }finally{
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Start 🚀";
+  }
+}
+
+loginBtn.addEventListener("click", doLogin);
+loginPassword.addEventListener("keydown", (e)=>{ if(e.key==="Enter") doLogin(); });
+loginNumber.addEventListener("keydown", (e)=>{ if(e.key==="Enter") loginPassword.focus(); });
+
+document.getElementById("logoutBtn").addEventListener("click", ()=>{
+  if(window.speechSynthesis) speechSynthesis.cancel();
+  sessionStorage.removeItem("sam_token");
+  sessionStorage.removeItem("sam_student");
+  location.reload();
+});
+
+function startApp(token, stu){
+  authToken = token;
+  student = stu;
+  loginScreen.classList.add("hidden");
+  appRoot.classList.remove("hidden");
+  appRoot.classList.add("flex");
+  const first = stu && stu.name ? String(stu.name).trim().split(/\s+/)[0] : "";
+  document.getElementById("headerName").textContent = first ? first + " · Mission Parivartan" : "Mission Parivartan";
+  const g = greetingText();
+  bubble("assistant", g);
+  // (Browsers block audio before first interaction, so the very first greeting is silent by design.)
+}
+
 // ---------- boot ----------
-bubble("assistant",GREETING);
-// (Browsers block audio before first interaction, so the very first greeting is silent by design.)
+// If they logged in earlier in this tab, go straight in.
+(function(){
+  const t = sessionStorage.getItem("sam_token");
+  const s = sessionStorage.getItem("sam_student");
+  if(t && s){
+    try{ startApp(t, JSON.parse(s)); return; }catch(e){}
+  }
+  loginScreen.classList.remove("hidden");
+  loginNumber.focus();
+})();
 </script>
 </body>
 </html>
