@@ -1,3 +1,4 @@
+import crypto from "crypto";
 
 // Mission Parivartan — Sam English Tutor — Gemini relay (Phase 1.5)
 // The Gemini API key lives ONLY in Vercel's environment variables, never in the frontend.
@@ -67,7 +68,54 @@ After the card, add ONE short warm line of praise and ONE question to continue p
 
 FORMAT: Plain text only. Never use markdown, asterisks, hashes or bullets with symbols. To stress a word, put it in "quotes". HINDI SCRIPT RULE: write every Hindi word either fully in Roman letters (socho, bharo, batao) or fully in Devanagari (सोचो, भरो, बताओ). NEVER mix scripts inside one word (like sochो) - that is broken text. Prefer Roman Hindi for short phrases and Devanagari for full sentences. NO SYMBOL BLANKS: never use underscores (___) or dashes to show a blank. Speak the task like a teacher instead: "Ab pura sentence bolo: My name is... apna naam lagao!" Keep everything age-appropriate for 14-16 year olds.`;
 
-const GREETING = "Hello! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\\n\\nLet's start easy. What is your name?";
+
+
+// ---------------------------------------------------------------------
+// Phase 2 additions (Oct 2026):
+//  1. Only logged-in students can talk to Sam. The browser sends the signed
+//     login token from api/login.js; we check its signature here.
+//  2. Sam is told the student's name, so he never asks for it.
+//  3. Faster replies: Gemini's "thinking" is set to LOW. Thinking was on at
+//     MEDIUM by default, which added seconds per reply and could eat the
+//     whole reply budget, leaving Sam with nothing to say.
+//  4. One automatic retry when Google is briefly overloaded (500/503).
+//
+// CACHING RULE (11g-a): BASE_PROMPT stays first and unchanged. Everything
+// that varies per student or per message is appended AFTER it.
+// ---------------------------------------------------------------------
+
+// Same check as api/login.js uses to create the token. If anyone edits
+// the token in their browser, the signature no longer matches.
+function verifyToken(token, secret) {
+  try {
+    if (!token || !secret || typeof token !== "string") return null;
+    const [body, sig] = token.split(".");
+    if (!body || !sig) return null;
+    const expected = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+
+// CONSTANT block (identical for every student, so it stays cache-friendly).
+// Matches the greeting index.html now shows after login.
+const ALREADY_GREETED =
+  "\n\nIMPORTANT CONTEXT: The student is logged in, so you already know who they are. " +
+  "They have ALREADY seen your opening message, which greeted them BY NAME, introduced you as Sam (सैम), " +
+  "told them mistakes are good, and asked: \"Batao, aaj tumhara din kaisa tha?\" " +
+  "So their first message is a reply to that question (or an activity request). " +
+  "NEVER introduce yourself again, never repeat welcome lines, and NEVER ask for their name. " +
+  "Respond warmly to what they said and flow straight into conversation.";
+
+function studentBlock(name) {
+  const first = String(name || "").trim().split(/\s+/)[0] || "";
+  if (!first) return "";
+  return "\n\nSTUDENT: Their name is " + first + ". Use it naturally now and then, not in every message.";
+}
 
 const MODE_HINTS = {
   chat: "RIGHT NOW use CHAT MODE (fluency): free, warm conversation about their day, family, school, hobbies. Correct at most ONE gentle thing per message. Goal is confidence.",
@@ -76,12 +124,28 @@ const MODE_HINTS = {
   writing: "RIGHT NOW do WRITING practice: ask them to write 3-5 short sentences on an easy topic (myself, my family, my school, my village). When they submit, praise first, then correct only the 2 most important error types and show the improved version. THEN CHOOSE THE NEXT TASK BY HOW THEY DID: if their writing was heavily broken (many errors, fragments), ask them to write the corrected version once from memory without looking (consolidation). But if it was nearly correct (only 1-2 small fixes), do NOT make them rewrite the same thing - that is boring busywork. Instead give a TRANSFER task: same sentence pattern, new topic. Example: they wrote about themselves, now say: Bahut badhiya! Ab same style mein apne best friend ke baare mein 4 sentences likho. Watch whether they reuse the correction correctly in the new writing - that shows the lesson stuck."
 };
 
+// Calls Gemini once. Returns the fetch Response.
+function callGemini(apiKey, systemText, contents, withThinking) {
+  const generationConfig = { temperature: 0.7, maxOutputTokens: 2048 };
+  if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: "low" };
+  return fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + apiKey,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: systemText }] }, contents, generationConfig }),
+    }
+  );
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    const { messages, mode } = req.body || {};
+    const { messages, mode, token } = req.body || {};
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "No messages" });
     }
@@ -90,30 +154,43 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server not configured" });
     }
 
-    const alreadyGreeted =
-      '\n\nIMPORTANT CONTEXT: The student has ALREADY seen this exact opening message from you: "' +
-      GREETING.replace(/\\n/g, " ") +
-      '" - so their first message is a REPLY to it (usually their name). NEVER introduce yourself again, never repeat namaste/welcome lines, never re-explain who you are. Greet them warmly BY NAME in one short line and flow straight into conversation. IF the student\'s first message is an activity request instead of their name (like "I want to practise sentences") and you do not know their name yet: start the activity happily, but FIRST ask their name in one short line woven in ("Great! Pehle batao, tumhara naam kya hai? Then we start!"), get the name, use it warmly, and continue the activity. Never run a whole session without knowing their name.';
+    // Only logged-in students may use Sam.
+    const session = verifyToken(token, process.env.SESSION_SECRET);
+    if (!session) {
+      return res.status(200).json({
+        text: "Tumhara login purana ho gaya hai. Upar wala logout button dabao aur phir se login karo. 😊",
+      });
+    }
 
-    const systemText = BASE_PROMPT + alreadyGreeted + "\n\n" + (MODE_HINTS[mode] || MODE_HINTS.chat);
+    // Order matters for Gemini's cache: brain first, then constant context,
+    // then this student's details, then the mode hint LAST.
+    const systemText =
+      BASE_PROMPT + ALREADY_GREETED + studentBlock(session.name) + "\n\n" + (MODE_HINTS[mode] || MODE_HINTS.chat);
 
     const contents = messages.slice(-40).map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: String(m.content || "").slice(0, 4000) }],
     }));
 
-    const r = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + apiKey,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemText }] },
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1000 },
-        }),
+    let r = await callGemini(apiKey, systemText, contents, true);
+
+    // If this model doesn't accept the thinking setting, retry without it.
+    if (r.status === 400) {
+      const errText = await r.text();
+      console.error("Gemini 400 (with thinking):", errText.slice(0, 500));
+      if (/thinking/i.test(errText)) {
+        r = await callGemini(apiKey, systemText, contents, false);
+      } else {
+        return res.status(200).json({ text: "Sorry, kuch problem ho gayi. Please try again!" });
       }
-    );
+    }
+
+    // Google briefly overloaded: wait a moment and try once more.
+    if (r.status === 500 || r.status === 503) {
+      console.error("Gemini", r.status, "- retrying once");
+      await sleep(1200);
+      r = await callGemini(apiKey, systemText, contents, true);
+    }
 
     if (!r.ok) {
       const errText = await r.text();
@@ -125,13 +202,21 @@ export default async function handler(req, res) {
     }
 
     const data = await r.json();
+    const cand = data.candidates && data.candidates[0];
     const text =
-      (data.candidates &&
-        data.candidates[0] &&
-        data.candidates[0].content &&
-        data.candidates[0].content.parts &&
-        data.candidates[0].content.parts.map((p) => p.text || "").join("").trim()) ||
+      (cand &&
+        cand.content &&
+        cand.content.parts &&
+        cand.content.parts
+          .filter((p) => !p.thought)
+          .map((p) => p.text || "")
+          .join("")
+          .trim()) ||
       "Sorry, main reply nahi kar paya. Ek baar phir try karo!";
+
+    if (cand && cand.finishReason && cand.finishReason !== "STOP") {
+      console.error("Gemini finishReason:", cand.finishReason);
+    }
 
     return res.status(200).json({ text });
   } catch (e) {
