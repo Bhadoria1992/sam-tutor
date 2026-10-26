@@ -124,18 +124,39 @@ const MODE_HINTS = {
   writing: "RIGHT NOW do WRITING practice: ask them to write 3-5 short sentences on an easy topic (myself, my family, my school, my village). When they submit, praise first, then correct only the 2 most important error types and show the improved version. THEN CHOOSE THE NEXT TASK BY HOW THEY DID: if their writing was heavily broken (many errors, fragments), ask them to write the corrected version once from memory without looking (consolidation). But if it was nearly correct (only 1-2 small fixes), do NOT make them rewrite the same thing - that is boring busywork. Instead give a TRANSFER task: same sentence pattern, new topic. Example: they wrote about themselves, now say: Bahut badhiya! Ab same style mein apne best friend ke baare mein 4 sentences likho. Watch whether they reuse the correction correctly in the new writing - that shows the lesson stuck."
 };
 
+// WHICH MODEL SAM USES — tried in this order. If Google says a name no longer
+// exists (404), the next one is tried automatically, so a retired model name
+// never takes Sam down. Flash-Lite = the smaller, faster, cheaper model with
+// higher free-tier limits (decision 11d: switch when free-tier pauses got
+// annoying in testing — triggered 23 Oct 2026). To go back to full Flash,
+// put "gemini-flash-latest" first.
+const MODELS = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest"];
+
 // Calls Gemini once. Returns the fetch Response.
-function callGemini(apiKey, systemText, contents, withThinking) {
+function callGemini(apiKey, model, systemText, contents, withThinking) {
   const generationConfig = { temperature: 0.7, maxOutputTokens: 2048 };
   if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: "low" };
   return fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=" + apiKey,
+    "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: systemText }] }, contents, generationConfig }),
     }
   );
+}
+
+// Tries each model in MODELS until one exists. Logs which model answered and
+// how long it took (visible in Vercel → Logs), so slowness can be diagnosed.
+async function askGemini(apiKey, systemText, contents, withThinking) {
+  let r = null;
+  for (const model of MODELS) {
+    const t0 = Date.now();
+    r = await callGemini(apiKey, model, systemText, contents, withThinking);
+    console.log("Gemini", model, "status", r.status, "in", Date.now() - t0, "ms");
+    if (r.status !== 404) return r;
+  }
+  return r;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -172,14 +193,14 @@ export default async function handler(req, res) {
       parts: [{ text: String(m.content || "").slice(0, 4000) }],
     }));
 
-    let r = await callGemini(apiKey, systemText, contents, true);
+    let r = await askGemini(apiKey, systemText, contents, true);
 
     // If this model doesn't accept the thinking setting, retry without it.
     if (r.status === 400) {
       const errText = await r.text();
       console.error("Gemini 400 (with thinking):", errText.slice(0, 500));
       if (/thinking/i.test(errText)) {
-        r = await callGemini(apiKey, systemText, contents, false);
+        r = await askGemini(apiKey, systemText, contents, false);
       } else {
         return res.status(200).json({ text: "Sorry, kuch problem ho gayi. Please try again!" });
       }
@@ -189,7 +210,7 @@ export default async function handler(req, res) {
     if (r.status === 500 || r.status === 503) {
       console.error("Gemini", r.status, "- retrying once");
       await sleep(1200);
-      r = await callGemini(apiKey, systemText, contents, true);
+      r = await askGemini(apiKey, systemText, contents, true);
     }
 
     if (!r.ok) {
