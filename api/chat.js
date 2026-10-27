@@ -1,7 +1,28 @@
 import crypto from "crypto";
 
-// Mission Parivartan — Sam English Tutor — Gemini relay (Phase 1.5)
-// The Gemini API key lives ONLY in Vercel's environment variables, never in the frontend.
+// =====================================================================
+// Mission Parivartan — Sam English Tutor — api/chat.js (Phase 2: MEMORY)
+//
+// This one file does two jobs:
+//   1. action "session": runs when a student opens Sam. Either RESUMES the
+//      conversation they left less than 30 minutes ago, or STARTS a new
+//      session: writes a short note about their previous session, updates
+//      their streak, and creates a personal opening message from memory.
+//   2. a normal chat turn: asks Gemini for Sam's reply, then SAVES both the
+//      student's message and Sam's reply to Supabase.
+//
+// SECURITY: the browser never talks to Supabase. Only this server file does,
+// using SUPABASE_SERVICE_KEY. The student's identity comes ONLY from the signed
+// login token, never from anything the browser claims.
+//
+// CACHING RULE (11g-a): BASE_PROMPT always goes first and never changes.
+// Everything that varies (memory, name, opening, mode) is added AFTER it.
+//
+// If Supabase is down, Sam still teaches; he just can't save or remember.
+//
+// Environment variables (Vercel): GEMINI_API_KEY, SUPABASE_URL,
+// SUPABASE_SERVICE_KEY, SESSION_SECRET.
+// =====================================================================
 
 const BASE_PROMPT = `You are "Sam", a warm, patient English tutor and a loyal friend for Class 9-10 students from Hindi-medium, UP Board government schools in India. Your name stands for a friend who never leaves their friend's side and holds them up till the very end - that is who you are for every student. When you introduce yourself for the first time in a conversation, write your name as Sam (सैम) so students pronounce it correctly; after that, just Sam. Their English is very weak (Pre-A1 to A1): broken sentences, wrong spellings, almost no grammar, and very low confidence. Many are shy first-generation English learners. Your job is to grow their spoken and written English slowly while keeping them confident and never embarrassed.
 
@@ -68,55 +89,6 @@ After the card, add ONE short warm line of praise and ONE question to continue p
 
 FORMAT: Plain text only. Never use markdown, asterisks, hashes or bullets with symbols. To stress a word, put it in "quotes". HINDI SCRIPT RULE: write every Hindi word either fully in Roman letters (socho, bharo, batao) or fully in Devanagari (सोचो, भरो, बताओ). NEVER mix scripts inside one word (like sochो) - that is broken text. Prefer Roman Hindi for short phrases and Devanagari for full sentences. NO SYMBOL BLANKS: never use underscores (___) or dashes to show a blank. Speak the task like a teacher instead: "Ab pura sentence bolo: My name is... apna naam lagao!" Keep everything age-appropriate for 14-16 year olds.`;
 
-
-
-// ---------------------------------------------------------------------
-// Phase 2 additions (Oct 2026):
-//  1. Only logged-in students can talk to Sam. The browser sends the signed
-//     login token from api/login.js; we check its signature here.
-//  2. Sam is told the student's name, so he never asks for it.
-//  3. Faster replies: Gemini's "thinking" is set to LOW. Thinking was on at
-//     MEDIUM by default, which added seconds per reply and could eat the
-//     whole reply budget, leaving Sam with nothing to say.
-//  4. One automatic retry when Google is briefly overloaded (500/503).
-//
-// CACHING RULE (11g-a): BASE_PROMPT stays first and unchanged. Everything
-// that varies per student or per message is appended AFTER it.
-// ---------------------------------------------------------------------
-
-// Same check as api/login.js uses to create the token. If anyone edits
-// the token in their browser, the signature no longer matches.
-function verifyToken(token, secret) {
-  try {
-    if (!token || !secret || typeof token !== "string") return null;
-    const [body, sig] = token.split(".");
-    if (!body || !sig) return null;
-    const expected = crypto.createHmac("sha256", secret).update(body).digest("base64url");
-    const a = Buffer.from(sig);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    return JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-  } catch (e) {
-    return null;
-  }
-}
-
-// CONSTANT block (identical for every student, so it stays cache-friendly).
-// Matches the greeting index.html now shows after login.
-const ALREADY_GREETED =
-  "\n\nIMPORTANT CONTEXT: The student is logged in, so you already know who they are. " +
-  "They have ALREADY seen your opening message, which greeted them BY NAME, introduced you as Sam (सैम), " +
-  "told them mistakes are good, and asked: \"Batao, aaj tumhara din kaisa tha?\" " +
-  "So their first message is a reply to that question (or an activity request). " +
-  "NEVER introduce yourself again, never repeat welcome lines, and NEVER ask for their name. " +
-  "Respond warmly to what they said and flow straight into conversation.";
-
-function studentBlock(name) {
-  const first = String(name || "").trim().split(/\s+/)[0] || "";
-  if (!first) return "";
-  return "\n\nSTUDENT: Their name is " + first + ". Use it naturally now and then, not in every message.";
-}
-
 const MODE_HINTS = {
   chat: "RIGHT NOW use CHAT MODE (fluency): free, warm conversation about their day, family, school, hobbies. Correct at most ONE gentle thing per message. Goal is confidence.",
   practice: "RIGHT NOW use PRACTICE MODE (accuracy): pick ONE micro-pattern suited to their level (or continue the current one), teach it through 2-3 example sentences, then make them produce several sentences with it, correcting carefully and warmly.",
@@ -124,17 +96,118 @@ const MODE_HINTS = {
   writing: "RIGHT NOW do WRITING practice: ask them to write 3-5 short sentences on an easy topic (myself, my family, my school, my village). When they submit, praise first, then correct only the 2 most important error types and show the improved version. THEN CHOOSE THE NEXT TASK BY HOW THEY DID: if their writing was heavily broken (many errors, fragments), ask them to write the corrected version once from memory without looking (consolidation). But if it was nearly correct (only 1-2 small fixes), do NOT make them rewrite the same thing - that is boring busywork. Instead give a TRANSFER task: same sentence pattern, new topic. Example: they wrote about themselves, now say: Bahut badhiya! Ab same style mein apne best friend ke baare mein 4 sentences likho. Watch whether they reuse the correction correctly in the new writing - that shows the lesson stuck."
 };
 
-// WHICH MODEL SAM USES — tried in this order. If Google says a name no longer
-// exists (404), the next one is tried automatically, so a retired model name
-// never takes Sam down. Flash-Lite = the smaller, faster, cheaper model with
-// higher free-tier limits (decision 11d: switch when free-tier pauses got
-// annoying in testing — triggered 23 Oct 2026). To go back to full Flash,
-// put "gemini-flash-latest" first.
+// ---------------------------------------------------------------------
+// SETTINGS (safe to change)
+// ---------------------------------------------------------------------
+// Which model Sam uses, in order. On a 404 (retired name) the next is tried.
 const MODELS = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest"];
+const RESUME_MINUTES = 30;    // come back within this → same conversation continues
+const MAX_GAP_SECONDS = 180;  // a pause longer than 3 min doesn't count as practice time
+const HISTORY_TO_GEMINI = 40; // how many recent messages Sam re-reads each turn
+const NOTES_SESSIONS = 3;     // how many earlier sessions' notes Sam is given
+const SUBJECT = "English";
 
-// Calls Gemini once. Returns the fetch Response.
-function callGemini(apiKey, model, systemText, contents, withThinking) {
-  const generationConfig = { temperature: 0.7, maxOutputTokens: 2048 };
+// ---------------------------------------------------------------------
+// CONSTANT CONTEXT — identical for every student, so it stays cache-friendly
+// ---------------------------------------------------------------------
+const SESSION_RULES =
+  "\n\nSESSION CONTEXT: The student is logged in, so you already know who they are. " +
+  "They have ALREADY seen your opening message for this session (shown under OPENING below). " +
+  "Their first message is a reply to it, or an activity request. " +
+  "NEVER introduce yourself again, never repeat welcome lines, and NEVER ask for their name. " +
+  "Respond warmly to what they said and flow straight into conversation." +
+  "\n\nMEMORY RULES: Below you may get MEMORY notes from their earlier sessions. Use them naturally: " +
+  "bring back a word or sentence pattern from last time inside a fresh question, or ask about something they told you. " +
+  "Mention only what the notes say; never invent past conversations. " +
+  "If the notes say this is their first session, do not refer to any past." +
+  "\n\nTEACHING REFINEMENTS (these override earlier rules where they differ):" +
+  "\n1. TRY FIRST, THEN MODEL: when the student answers in Hindi or a broken phrase, first invite them to try it in English themselves " +
+  "(\"English mein kaise bologe? Try karo!\"), with a small hint if needed. Give the full correct sentence only if their attempt still needs it, then ask them to say it once." +
+  "\n2. Do not end two replies in a row with a repeat-after-me task (\"Ek baar bolo ya likho: ...\" with your sentence). " +
+  "For a short answer, ask them to build the full sentence themselves first." +
+  "\n3. When you ask them to guess the meaning of a praise word, that guess is the ONLY question in that message." +
+  "\n4. Bring in one useful new word naturally every few turns (aim for 3 to 5 per session), with its meaning in Hindi.";
+
+const GREETING_TASK =
+  "\n\nTASK RIGHT NOW: The student has just opened Sam for a NEW session. Write ONLY your opening message. " +
+  "Greet them by first name and write your name as Sam (सैम) once. " +
+  "Mention ONE specific thing from MEMORY in a few words (use the day label, e.g. kal / aaj pehle / kuch din pehle). " +
+  "Then ask exactly ONE easy question, ideally a quick recall of a word or sentence they practised last time. " +
+  "At most 3 short lines. Warm, Hinglish suited to their level. Plain text only.";
+
+const SUMMARY_PROMPT =
+  "You write short notes for an English teacher about ONE practice session between Sam (an AI tutor) and a Class 9-10 " +
+  "Hindi-medium student. Read the transcript and reply with exactly these four lines, in simple English, nothing else:\n" +
+  "Topics: <what they talked about, a few words>\n" +
+  "Practised: <English sentences or patterns the student said or practised, quoted briefly>\n" +
+  "Needs work: <mistakes that came up, each with the correct form, or 'none'>\n" +
+  "New words: <words Sam taught, or 'none'>\n" +
+  "Use ONLY what is in the transcript. Never invent. Keep the whole note under 70 words.";
+
+const firstName = (name) => String(name || "").trim().split(/\s+/)[0] || "";
+
+// The opening used for a student's very first session (or if memory is unavailable).
+function firstGreeting(name) {
+  const first = firstName(name);
+  return (first ? "Hello " + first + "! 😊 " : "Hello! 😊 ") +
+    "Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. " +
+    "Don't worry about mistakes — mistakes are good! ✨\n\nBatao, aaj tumhara din kaisa tha?";
+}
+
+function studentBlock(name) {
+  const first = firstName(name);
+  return first ? "\n\nSTUDENT: Their name is " + first + ". Use it naturally now and then, not in every message." : "";
+}
+
+// ---------------------------------------------------------------------
+// SMALL HELPERS
+// ---------------------------------------------------------------------
+function verifyToken(token, secret) {
+  try {
+    if (!token || !secret || typeof token !== "string") return null;
+    const [body, sig] = token.split(".");
+    if (!body || !sig) return null;
+    const expected = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+    const a = Buffer.from(sig), b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Dates are Indian dates (IST), so a session at 11 pm counts for that day.
+const istDate = (d) => new Date(d.getTime() + 330 * 60000).toISOString().slice(0, 10);
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (iso) => Number(iso.slice(8, 10)) + " " + MONTHS[Number(iso.slice(5, 7)) - 1];
+const isUuid = (s) => typeof s === "string" && /^[0-9a-f-]{36}$/i.test(s);
+
+// ---------------------------------------------------------------------
+// SUPABASE (server side only). New-style sb_secret_ keys go ONLY on the
+// apikey header — never as "Authorization: Bearer".
+// ---------------------------------------------------------------------
+const dbReady = () => !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+
+async function db(path, { method = "GET", body, prefer } = {}) {
+  const url = process.env.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1/" + path;
+  const headers = { apikey: process.env.SUPABASE_SERVICE_KEY, "Content-Type": "application/json" };
+  if (prefer) headers.Prefer = prefer;
+  const r = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error("DB " + method + " " + path.split("?")[0] + " → " + r.status + " " + t.slice(0, 300));
+  }
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
+// ---------------------------------------------------------------------
+// GEMINI
+// ---------------------------------------------------------------------
+function callGemini(apiKey, model, systemText, contents, withThinking, maxTokens, temperature) {
+  const generationConfig = { temperature, maxOutputTokens: maxTokens };
   if (withThinking) generationConfig.thinkingConfig = { thinkingLevel: "low" };
   return fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey,
@@ -146,100 +219,339 @@ function callGemini(apiKey, model, systemText, contents, withThinking) {
   );
 }
 
-// Tries each model in MODELS until one exists. Logs which model answered and
-// how long it took (visible in Vercel → Logs), so slowness can be diagnosed.
-async function askGemini(apiKey, systemText, contents, withThinking) {
-  let r = null;
+async function askGemini(apiKey, systemText, contents, withThinking, maxTokens, temperature) {
+  let r = null, used = null;
   for (const model of MODELS) {
     const t0 = Date.now();
-    r = await callGemini(apiKey, model, systemText, contents, withThinking);
+    r = await callGemini(apiKey, model, systemText, contents, withThinking, maxTokens, temperature);
+    used = model;
     console.log("Gemini", model, "status", r.status, "in", Date.now() - t0, "ms");
-    if (r.status !== 404) return r;
+    if (r.status !== 404) break;
   }
-  return r;
+  return { r, model: used };
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// One Gemini request with all the safety nets:
+// thinking setting rejected → retry without it · Google overloaded (500/503)
+// → wait and retry · blank reply → retry. At most 3 attempts.
+async function generate(apiKey, systemText, contents, { maxTokens = 2048, temperature = 0.7, label = "reply" } = {}) {
+  let withThinking = true, model = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const out = await askGemini(apiKey, systemText, contents, withThinking, maxTokens, temperature);
+    const r = out.r;
+    model = out.model;
+    if (r.status === 400) {
+      const t = await r.text();
+      console.error("Gemini 400:", t.slice(0, 400));
+      if (withThinking && /thinking/i.test(t)) { withThinking = false; continue; }
+      return { ok: false, status: 400, model };
+    }
+    if (r.status === 500 || r.status === 503) {
+      console.error("Gemini", r.status, "(overloaded) - retrying");
+      await sleep(1200);
+      continue;
+    }
+    if (!r.ok) {
+      const t = await r.text();
+      if (r.status === 402) console.error("OUT OF CREDIT: Gemini returned 402. Top up in Google AI Studio.");
+      console.error("Gemini error:", r.status, t.slice(0, 400));
+      return { ok: false, status: r.status, model };
+    }
+    const data = await r.json();
+    const cand = data.candidates && data.candidates[0];
+    const text = ((cand && cand.content && cand.content.parts) || [])
+      .filter((p) => !p.thought)
+      .map((p) => p.text || "")
+      .join("")
+      .trim();
+    const usage = data.usageMetadata || null;
+    if (usage) {
+      console.log("Tokens", label, "in", usage.promptTokenCount, "cached", usage.cachedContentTokenCount || 0,
+        "out", usage.candidatesTokenCount, "thinking", usage.thoughtsTokenCount || 0);
+    }
+    if (!text) {
+      console.error("Gemini blank", label, "- finishReason:", cand && cand.finishReason, "attempt", attempt);
+      continue;
+    }
+    return { ok: true, text, model, usage };
+  }
+  return { ok: false, status: "retries", model };
+}
 
+const usageCols = (u) => ({
+  input_tokens: u ? u.promptTokenCount ?? null : null,
+  cached_tokens: u ? u.cachedContentTokenCount ?? 0 : null,
+  output_tokens: u ? u.candidatesTokenCount ?? null : null,
+  thinking_tokens: u ? u.thoughtsTokenCount ?? 0 : null,
+});
+
+function friendlyError(status) {
+  if (status === 429) return "Sam thoda busy hai abhi. Ek minute baad try karo! 😊";
+  if (status === 402) return "Sam thodi der ke liye break par hai. Apne teacher ko batao. 🙏";
+  return "Sorry, main reply nahi kar paya. Ek baar phir try karo!";
+}
+
+// ---------------------------------------------------------------------
+// MEMORY
+// ---------------------------------------------------------------------
+function buildMemory(notes, today, streak, hasPrevious) {
+  if (!notes.length) {
+    return hasPrevious
+      ? "\n\nMEMORY: They have practised with you before, but there are no notes yet. Do not mention specific past events."
+      : "\n\nMEMORY: This is their FIRST session with you. There is no past yet.";
+  }
+  let s = "\n\nMEMORY (short notes from their earlier sessions; use naturally, never invent beyond them):";
+  for (const n of notes) {
+    const d = daysBetween(n.date, today);
+    const label = d <= 0 ? "Earlier today" : d === 1 ? "Yesterday" : d + " days ago";
+    s += "\n- " + label + " (" + shortDate(n.date) + "): " + String(n.summary).replace(/\s*\n+\s*/g, " | ");
+  }
+  s += "\nPractice streak: " + streak + (streak === 1 ? " day." : " days in a row.");
+  return s;
+}
+
+// Writes the 4-line teacher note for a finished session.
+async function summarise(apiKey, sessionId) {
+  const msgs = await db(
+    "messages?session_id=eq." + sessionId + "&order=timestamp.asc&limit=120&select=sender,text,input_type"
+  );
+  if (!msgs || !msgs.some((m) => m.sender === "student" && m.input_type !== "button")) return null;
+  const transcript = msgs
+    .map((m) => (m.sender === "sam" ? "Sam: " : m.input_type === "button" ? "Student (tapped a button): " : "Student: ") + (m.text || ""))
+    .join("\n")
+    .slice(-12000);
+  const g = await generate(apiKey, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: transcript }] }], {
+    maxTokens: 400,
+    temperature: 0.2,
+    label: "summary",
+  });
+  return g.ok ? g.text.slice(0, 800) : null;
+}
+
+// ---------------------------------------------------------------------
+// ACTION: session — open Sam (resume or start fresh)
+// ---------------------------------------------------------------------
+async function startSession(res, apiKey, who, body) {
+  const sid = who.sid;
+  const now = new Date();
+  const today = istDate(now);
+  const noMemory = { session_id: null, resumed: false, greeting: firstGreeting(who.name), history: [], today_prior_seconds: 0, session_seconds: 0, saved: false };
+  if (!dbReady() || !isUuid(sid)) return res.status(200).json(noMemory);
+
+  try {
+    const recent = (await db(
+      "sessions?student_id=eq." + sid + "&subject=eq." + SUBJECT +
+      "&order=start_time.desc&limit=6&select=session_id,date,start_time,last_message_at,messages_count,summary,greeting,active_seconds"
+    )) || [];
+    const latest = recent[0];
+
+    // RESUME: back within 30 minutes → same conversation, shown again.
+    if (latest && !body.fresh) {
+      const lastAt = Date.parse(latest.last_message_at || latest.start_time);
+      if (now.getTime() - lastAt < RESUME_MINUTES * 60000) {
+        const msgs = (await db(
+          "messages?session_id=eq." + latest.session_id + "&order=timestamp.asc&limit=80&select=sender,text"
+        )) || [];
+        const history = msgs.map((m) => ({ role: m.sender === "sam" ? "assistant" : "user", content: m.text || "" }));
+        const prior = recent.slice(1).filter((s) => s.date === today).reduce((a, s) => a + (s.active_seconds || 0), 0);
+        return res.status(200).json({
+          session_id: latest.session_id, resumed: true, greeting: latest.greeting || "", history,
+          today_prior_seconds: prior, session_seconds: latest.active_seconds || 0, saved: true,
+        });
+      }
+    }
+
+    // NEW SESSION
+    // 1. A short note about their previous session, if it doesn't have one yet.
+    if (latest && !latest.summary && (latest.messages_count || 0) > 0) {
+      try {
+        const note = await summarise(apiKey, latest.session_id);
+        if (note) {
+          latest.summary = note;
+          await db("sessions?session_id=eq." + latest.session_id, { method: "PATCH", body: { summary: note } });
+        }
+      } catch (e) {
+        console.error("Summary failed (carrying on):", e.message);
+      }
+    }
+
+    // 2. Streak — worked out by code, never by the AI.
+    let streak = 1;
+    try {
+      const st = ((await db("state?student_id=eq." + sid + "&subject=eq." + SUBJECT + "&select=state_id,streak_days,last_active")) || [])[0];
+      if (st) {
+        const gap = st.last_active ? daysBetween(st.last_active, today) : null;
+        streak = gap === 0 ? st.streak_days || 1 : gap === 1 ? (st.streak_days || 0) + 1 : 1;
+        if (gap !== 0 || !st.streak_days) {
+          await db("state?state_id=eq." + st.state_id, {
+            method: "PATCH",
+            body: { streak_days: streak, last_active: today, updated_at: now.toISOString() },
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Streak update failed (carrying on):", e.message);
+    }
+
+    // 3. What Sam remembers: notes from up to 3 earlier sessions.
+    const notes = recent.filter((s) => s.summary).slice(0, NOTES_SESSIONS);
+    const memory = buildMemory(notes, today, streak, recent.length > 0);
+
+    // 4. The opening message: from memory when there is some, else the first-day greeting.
+    let greeting = firstGreeting(who.name), gModel = "fixed-greeting", gUsage = null;
+    if (notes.length) {
+      const g = await generate(
+        apiKey,
+        BASE_PROMPT + SESSION_RULES + memory + studentBlock(who.name) + GREETING_TASK,
+        [{ role: "user", parts: [{ text: "[The student has just opened Sam. Write your opening message now.]" }] }],
+        { maxTokens: 600, label: "greeting" }
+      );
+      if (g.ok) { greeting = g.text; gModel = g.model; gUsage = g.usage; }
+    }
+
+    // 5. Save the session and Sam's opening as its first message.
+    const mode = MODE_HINTS[body.mode] ? body.mode : "chat";
+    const created = await db("sessions", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        student_id: sid, subject: SUBJECT, mode, date: today, start_time: now.toISOString(),
+        greeting, memory_context: memory, messages_count: 0, minutes: 0, active_seconds: 0,
+      },
+    });
+    const sessionId = created[0].session_id;
+    await db("messages", {
+      method: "POST",
+      body: {
+        session_id: sessionId, student_id: sid, sender: "sam", text: greeting, input_type: null, mode,
+        model_used: gModel, ...usageCols(gUsage), timestamp: now.toISOString(),
+      },
+    });
+    const prior = recent.filter((s) => s.date === today).reduce((a, s) => a + (s.active_seconds || 0), 0);
+    return res.status(200).json({
+      session_id: sessionId, resumed: false, greeting, history: [],
+      today_prior_seconds: prior, session_seconds: 0, streak, saved: true,
+    });
+  } catch (e) {
+    console.error("Session start failed - Sam will chat without memory:", e.message);
+    return res.status(200).json(noMemory);
+  }
+}
+
+// ---------------------------------------------------------------------
+// A NORMAL CHAT TURN
+// ---------------------------------------------------------------------
+async function chatTurn(res, apiKey, who, body) {
+  const { messages } = body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: "No messages" });
+  }
+  const sid = who.sid;
+  const sentAt = new Date();
+  const mode = MODE_HINTS[body.mode] ? body.mode : "chat";
+  const inputType = ["voice", "typed", "button"].includes(body.input_type) ? body.input_type : "typed";
+
+  // The session must belong to THIS student (checked by student_id too).
+  let sess = null;
+  if (dbReady() && isUuid(body.session_id) && isUuid(sid)) {
+    try {
+      sess = ((await db(
+        "sessions?session_id=eq." + body.session_id + "&student_id=eq." + sid +
+        "&select=session_id,greeting,memory_context,last_message_at,start_time,messages_count,active_seconds"
+      )) || [])[0] || null;
+    } catch (e) {
+      console.error("Could not load session (replying without memory):", e.message);
+    }
+  }
+
+  // Order matters for Gemini's cache: brain → constant rules → this student's
+  // memory → name → this session's opening → mode hint LAST.
+  const systemText =
+    BASE_PROMPT + SESSION_RULES +
+    ((sess && sess.memory_context) || "") +
+    studentBlock(who.name) +
+    "\n\nOPENING (already shown to them this session): " + ((sess && sess.greeting) || firstGreeting(who.name)) +
+    "\n\n" + MODE_HINTS[mode];
+
+  // Recent conversation. The opening lives in the system text above, so any
+  // leading Sam messages are dropped (Gemini expects the student to go first).
+  let recentMsgs = messages.slice(-HISTORY_TO_GEMINI);
+  while (recentMsgs.length && recentMsgs[0].role === "assistant") recentMsgs = recentMsgs.slice(1);
+  const contents = recentMsgs.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content || "").slice(0, 4000) }],
+  }));
+  if (!contents.length) return res.status(400).json({ error: "No student message" });
+
+  const g = await generate(apiKey, systemText, contents, { label: "reply" });
+  const reply = g.ok ? g.text : friendlyError(g.status);
+
+  // Save both messages and update the session (practice time, count).
+  let sessionSeconds = null;
+  if (sess) {
+    const lastAt = Date.parse(sess.last_message_at || sess.start_time);
+    const gap = Math.max(0, Math.round((sentAt.getTime() - lastAt) / 1000));
+    sessionSeconds = (sess.active_seconds || 0) + Math.min(gap, MAX_GAP_SECONDS);
+    const studentText = String(messages[messages.length - 1].content || "").slice(0, 4000);
+    const row = (sender, text, extra) => ({
+      session_id: sess.session_id, student_id: sid, sender, text, mode,
+      input_type: null, model_used: null,
+      input_tokens: null, cached_tokens: null, output_tokens: null, thinking_tokens: null,
+      ...extra,
+    });
+    try {
+      await Promise.all([
+        db("messages", {
+          method: "POST",
+          body: [
+            row("student", studentText, { input_type: inputType, timestamp: sentAt.toISOString() }),
+            row("sam", reply, {
+              model_used: g.ok ? g.model : "error:" + g.status,
+              ...usageCols(g.usage),
+              timestamp: new Date(Math.max(Date.now(), sentAt.getTime() + 1)).toISOString(),
+            }),
+          ],
+        }),
+        db("sessions?session_id=eq." + sess.session_id, {
+          method: "PATCH",
+          body: {
+            messages_count: (sess.messages_count || 0) + (inputType === "button" ? 0 : 1),
+            last_message_at: sentAt.toISOString(),
+            active_seconds: sessionSeconds,
+            minutes: Math.round(sessionSeconds / 60),
+          },
+        }),
+      ]);
+    } catch (e) {
+      console.error("Saving failed (reply still shown):", e.message);
+    }
+  }
+
+  return res.status(200).json({ text: reply, session_seconds: sessionSeconds, saved: !!sess });
+}
+
+// ---------------------------------------------------------------------
+// ENTRY POINT
+// ---------------------------------------------------------------------
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    const { messages, mode, token } = req.body || {};
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "No messages" });
-    }
+    const body = req.body || {};
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "Server not configured" });
-    }
+    if (!apiKey) return res.status(500).json({ error: "Server not configured" });
 
     // Only logged-in students may use Sam.
-    const session = verifyToken(token, process.env.SESSION_SECRET);
-    if (!session) {
+    const who = verifyToken(body.token, process.env.SESSION_SECRET);
+    if (!who) {
       return res.status(200).json({
-        text: "Tumhara login purana ho gaya hai. Upar wala logout button dabao aur phir se login karo. 😊",
+        relogin: true,
+        text: "Tumhara login purana ho gaya hai. Phir se login karo. 😊",
       });
     }
-
-    // Order matters for Gemini's cache: brain first, then constant context,
-    // then this student's details, then the mode hint LAST.
-    const systemText =
-      BASE_PROMPT + ALREADY_GREETED + studentBlock(session.name) + "\n\n" + (MODE_HINTS[mode] || MODE_HINTS.chat);
-
-    const contents = messages.slice(-40).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content || "").slice(0, 4000) }],
-    }));
-
-    let r = await askGemini(apiKey, systemText, contents, true);
-
-    // If this model doesn't accept the thinking setting, retry without it.
-    if (r.status === 400) {
-      const errText = await r.text();
-      console.error("Gemini 400 (with thinking):", errText.slice(0, 500));
-      if (/thinking/i.test(errText)) {
-        r = await askGemini(apiKey, systemText, contents, false);
-      } else {
-        return res.status(200).json({ text: "Sorry, kuch problem ho gayi. Please try again!" });
-      }
-    }
-
-    // Google briefly overloaded: wait a moment and try once more.
-    if (r.status === 500 || r.status === 503) {
-      console.error("Gemini", r.status, "- retrying once");
-      await sleep(1200);
-      r = await askGemini(apiKey, systemText, contents, true);
-    }
-
-    if (!r.ok) {
-      const errText = await r.text();
-      console.error("Gemini error:", r.status, errText.slice(0, 500));
-      if (r.status === 429) {
-        return res.status(200).json({ text: "Sam thoda busy hai abhi. Ek minute baad try karo! 😊" });
-      }
-      return res.status(200).json({ text: "Sorry, kuch problem ho gayi. Please try again!" });
-    }
-
-    const data = await r.json();
-    const cand = data.candidates && data.candidates[0];
-    const text =
-      (cand &&
-        cand.content &&
-        cand.content.parts &&
-        cand.content.parts
-          .filter((p) => !p.thought)
-          .map((p) => p.text || "")
-          .join("")
-          .trim()) ||
-      "Sorry, main reply nahi kar paya. Ek baar phir try karo!";
-
-    if (cand && cand.finishReason && cand.finishReason !== "STOP") {
-      console.error("Gemini finishReason:", cand.finishReason);
-    }
-
-    return res.status(200).json({ text });
+    if (body.action === "session") return await startSession(res, apiKey, who, body);
+    return await chatTurn(res, apiKey, who, body);
   } catch (e) {
     console.error(e);
     return res.status(200).json({ text: "Sorry, kuch problem ho gayi. Please try again!" });
