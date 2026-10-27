@@ -103,8 +103,14 @@ let mode = "chat";
 let loading = false;
 let speakOn = true;
 let listening = false;
-let startTime = null;
 const GOAL_MIN = 30;
+// Memory (Phase 2): which saved session this chat belongs to, and practice time.
+let sessionId = null;      // null = not saving (database unavailable)
+let todayPriorSecs = 0;    // practice time today from earlier sessions
+let sessionSecs = 0;       // practice time in this session (from the server)
+let secsAt = 0;            // when sessionSecs was last updated
+let activeNow = false;     // has the student sent anything this session?
+let usedMic = false;       // did the current message come from the microphone?
 let chosenVoice = null;
 
 const chatArea = document.getElementById("chatArea");
@@ -172,22 +178,27 @@ function note(msg){
 }
 
 function updateTimer(){
-  if(!startTime)return;
-  const m=Math.floor((Date.now()-startTime)/60000);
+  // Today's practice = earlier sessions + this session, plus the live minute
+  // since the last message (capped at 3 min, the same rule the server uses).
+  const live = activeNow ? Math.min((Date.now()-secsAt)/1000, 180) : 0;
+  const m=Math.floor((todayPriorSecs+sessionSecs+live)/60);
   if(m>=GOAL_MIN){
     timerChip.textContent="🔥 "+m+" min";
     timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-emerald-400 text-emerald-950";
   }else{
     timerChip.textContent="⏱ "+m+"/"+GOAL_MIN+" min";
+    timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100";
   }
 }
 setInterval(updateTimer,15000);
 
 // ---------- core send ----------
-async function send(text){
+// inputType: "button" for tab / progress taps; otherwise voice or typed.
+async function send(text, inputType){
   const content=(text!==undefined?text:inputBox.value).trim();
   if(!content||loading)return;
-  if(!startTime)startTime=Date.now();
+  const kind = inputType || (usedMic ? "voice" : "typed");
+  usedMic=false;
   inputBox.value="";note("");
   messages.push({role:"user",content});
   bubble("user",content);
@@ -196,9 +207,12 @@ async function send(text){
     const r=await fetch("/api/chat",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({messages,mode,token:authToken})
+      body:JSON.stringify({messages,mode,token:authToken,session_id:sessionId,input_type:kind})
     });
     const data=await r.json();
+    if(data && data.relogin){ typing(false); logout(); return; }
+    if(data && typeof data.session_seconds==="number"){ sessionSecs=data.session_seconds; }
+    secsAt=Date.now(); activeNow=true; updateTimer();
     const reply=(data&&data.text)||"Sorry, kuch problem ho gayi. Please try again!";
     messages.push({role:"assistant",content:reply});
     typing(false);bubble("assistant",reply);speak(reply);
@@ -229,28 +243,24 @@ document.querySelectorAll(".tab").forEach(btn=>{
     micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg "+
       (mode==="writing"?"bg-slate-50 text-slate-300":"bg-slate-100 text-slate-600");
     note("");
-    if(MODE_MESSAGE[mode])send(MODE_MESSAGE[mode]);
+    if(MODE_MESSAGE[mode])send(MODE_MESSAGE[mode],"button");
   });
 });
 
 document.getElementById("progressBtn").addEventListener("click",()=>{
-  if(!loading)send("Sam, show my progress card please.");
+  if(!loading)send("Sam, show my progress card please.","button");
 });
 
 document.getElementById("restartBtn").addEventListener("click",()=>{
+  if(loading)return;
   if(window.speechSynthesis)speechSynthesis.cancel();
-  messages=[];mode="chat";startTime=null;
-  timerChip.textContent="⏱ 0/30 min";
-  timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100";
+  mode="chat";
   document.querySelectorAll(".tab").forEach((b,i)=>{
     b.className="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium "+
       (b.dataset.mode==="chat"?"bg-indigo-700 text-white":"bg-white text-indigo-700 border border-indigo-200");
   });
   micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";
-  chatArea.innerHTML="";note("");
-  const g=greetingText();
-  bubble("assistant",g);
-  speak(g);
+  beginSession(true);   // Restart = a fresh saved session (the last one gets its note)
 });
 
 voiceBtn.addEventListener("click",()=>{
@@ -277,6 +287,7 @@ micBtn.addEventListener("click",()=>{
     r.onresult=(e)=>{
       const t=e.results[0][0].transcript;
       inputBox.value=(inputBox.value?inputBox.value+" ":"")+t;
+      usedMic=true;
     };
     r.onerror=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";note("Sun nahi paya, phir se try karo ya type karo.");};
     r.onend=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";};
@@ -338,12 +349,13 @@ loginBtn.addEventListener("click", doLogin);
 loginPassword.addEventListener("keydown", (e)=>{ if(e.key==="Enter") doLogin(); });
 loginNumber.addEventListener("keydown", (e)=>{ if(e.key==="Enter") loginPassword.focus(); });
 
-document.getElementById("logoutBtn").addEventListener("click", ()=>{
+function logout(){
   if(window.speechSynthesis) speechSynthesis.cancel();
   sessionStorage.removeItem("sam_token");
   sessionStorage.removeItem("sam_student");
   location.reload();
-});
+}
+document.getElementById("logoutBtn").addEventListener("click", logout);
 
 function startApp(token, stu){
   authToken = token;
@@ -353,9 +365,50 @@ function startApp(token, stu){
   appRoot.classList.add("flex");
   const first = stu && stu.name ? String(stu.name).trim().split(/\s+/)[0] : "";
   document.getElementById("headerName").textContent = first ? first + " · Mission Parivartan" : "Mission Parivartan";
-  const g = greetingText();
-  bubble("assistant", g);
-  // (Browsers block audio before first interaction, so the very first greeting is silent by design.)
+  beginSession(false);
+}
+
+// ---------- memory: open (or resume) a saved session ----------
+// fresh=false: if they were here less than 30 min ago, the same chat comes back.
+// fresh=true (Restart): always a new session.
+async function beginSession(fresh){
+  loading=true; sendBtn.disabled=true;
+  chatArea.innerHTML=""; note(""); messages=[];
+  sessionId=null; sessionSecs=0; todayPriorSecs=0; activeNow=false; secsAt=Date.now();
+  updateTimer();
+  typing(true);
+  let data=null;
+  try{
+    const r=await fetch("/api/chat",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"session",token:authToken,mode,fresh:!!fresh})
+    });
+    data=await r.json();
+  }catch(e){ data=null; }
+  typing(false);
+  if(data && data.relogin){ logout(); return; }
+
+  if(data && data.resumed && Array.isArray(data.history) && data.history.length){
+    // Back within 30 minutes: show the conversation where they left it.
+    sessionId=data.session_id;
+    messages=data.history.slice();
+    messages.forEach(m=>bubble(m.role==="assistant"?"assistant":"user", m.content));
+    note("Pichli baat yahin se aage badhate hain 🙂");
+  }else{
+    const g=(data && data.greeting) || greetingText();
+    sessionId=(data && data.session_id) || null;
+    messages=[{role:"assistant",content:g}];
+    bubble("assistant",g);
+    speak(g);   // after a tap (login / Restart) the browser allows speech
+  }
+  if(data){
+    todayPriorSecs=data.today_prior_seconds||0;
+    sessionSecs=data.session_seconds||0;
+  }
+  secsAt=Date.now();
+  updateTimer();
+  loading=false; sendBtn.disabled=false;
 }
 
 // ---------- boot ----------
