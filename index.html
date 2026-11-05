@@ -2,80 +2,192 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
 <title>Sam — Mission Parivartan English Tutor</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+/* Optimus colours, kept calm: red only as an accent (header line, avatar,
+   Send, active tab). Never red for corrections: to students red means "wrong". */
+:root{
+  --red:#DE3831; --red-dark:#C22F29; --red-tint:#FCEDEC;
+  --bg:#F6F7F7; --surface:#FFFFFF; --soft:#EEF0F0; --line:#E1E4E4;
+  --grey-3:#C3C8C8; --grey-4:#A2A4A3; --grey-5:#6C6F70; --ink:#2E3132; --ink-soft:#575A5B;
+  --green:#2E8B57; --green-tint:#E6F4EC;
+  --font:"Open Sans","Noto Sans Devanagari",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
+button:disabled{cursor:default;opacity:.45}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.hidden{display:none!important}
+
+/* ---------- login ---------- */
+#loginScreen{min-height:100%;display:flex;align-items:center;justify-content:center;
+  padding:24px max(16px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:28px 24px 22px;box-shadow:0 8px 28px rgba(46,49,50,.06)}
+.login-head{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:24px}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.avatar.big{width:64px;height:64px;font-size:28px}
+.login-title{margin-top:12px;font-size:21px;font-weight:700;color:var(--ink)}
+.login-title .dev{font-weight:600}
+.login-tag{margin-top:4px;font-size:15px;color:var(--ink-soft)}
+.field{display:block;margin-bottom:16px}
+.field span{display:block;font-size:14px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+.field input{width:100%;font:inherit;font-size:16px;color:var(--ink);padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.field input:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 3px var(--red-tint)}
+.btn-primary{width:100%;border:0;border-radius:12px;padding:13px 16px;background:var(--red);color:#fff;font-weight:700;font-size:16px}
+.btn-primary:active{background:var(--red-dark)}
+#loginError{margin-top:14px;font-size:14px;color:#9E2A24;background:var(--red-tint);border-radius:10px;padding:10px 12px}
+.login-foot{margin-top:18px;text-align:center;font-size:13px;color:var(--grey-5);display:flex;flex-direction:column;gap:8px;align-items:center}
+.linkish{background:none;border:0;padding:4px 8px;color:var(--ink-soft);font-size:13px;text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- app shell: full screen on phones, a centred card on bigger screens ---------- */
+#appRoot{display:flex;flex-direction:column;height:100vh;height:100dvh;background:var(--surface);margin:0 auto;max-width:760px}
+@media (min-width:700px){
+  body{padding:16px}
+  #appRoot{height:calc(100vh - 32px);height:calc(100dvh - 32px);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 8px 28px rgba(46,49,50,.06)}
+}
+header.bar{display:flex;align-items:center;gap:10px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));
+  padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));
+  background:var(--surface);border-bottom:2px solid var(--red)}
+.who{flex:1;min-width:0;line-height:1.25}
+.who .name{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .sub{font-size:12.5px;color:var(--grey-5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#timerChip{flex-shrink:0;font-size:13px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--soft);color:var(--ink-soft);font-variant-numeric:tabular-nums}
+#timerChip.goal{background:var(--green-tint);color:var(--green)}
+.icon-btn{width:36px;height:36px;flex-shrink:0;border:0;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;font-size:17px;position:relative}
+.icon-btn.off{opacity:.55}
+.menu{position:absolute;top:44px;right:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(46,49,50,.12);padding:6px;min-width:190px;z-index:20}
+.menu button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:10px 12px;font-size:15px;color:var(--ink)}
+.menu button:hover{background:var(--soft)}
+
+nav.tabs{display:flex;gap:8px;padding:8px 12px;overflow-x:auto;scrollbar-width:none;background:var(--surface);border-bottom:1px solid var(--line);
+  padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+nav.tabs::-webkit-scrollbar{display:none}
+.tab,.chip{flex-shrink:0;white-space:nowrap;font-size:14px;font-weight:600;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft)}
+.tab.active{background:var(--red-tint);border-color:var(--red);color:var(--red-dark)}
+
+#chatArea{flex:1;overflow-y:auto;background:var(--bg);padding:16px 12px;display:flex;flex-direction:column;gap:10px;
+  padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));-webkit-overflow-scrolling:touch}
+.msg{display:flex}
+.msg.user{justify-content:flex-end}
+.bubble{max-width:min(85%,560px);padding:10px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;font-size:16px;line-height:1.5}
+.msg.sam .bubble{background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:6px;color:var(--ink)}
+.msg.user .bubble{background:var(--grey-5);color:#fff;border-bottom-right-radius:6px}
+.bubble.typing{color:var(--grey-4)}
+
+#noteLine{font-size:13.5px;color:var(--ink-soft);background:var(--soft);padding:8px 14px;border-top:1px solid var(--line)}
+.inputbar{display:flex;align-items:flex-end;gap:8px;background:var(--surface);border-top:1px solid var(--line);padding:10px 12px;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom));padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+#micBtn{width:44px;height:44px;border:0;border-radius:50%;background:var(--soft);font-size:19px;flex-shrink:0}
+#micBtn.listening{background:var(--red);color:#fff;animation:pulse 1.2s ease-in-out infinite}
+#micBtn.off{opacity:.4}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(222,56,49,.35)}50%{box-shadow:0 0 0 8px rgba(222,56,49,0)}}
+@media (prefers-reduced-motion:reduce){#micBtn.listening{animation:none}}
+#inputBox{flex:1;min-width:0;resize:none;font:inherit;font-size:16px;color:var(--ink);padding:10px 14px;border:1px solid var(--line);border-radius:22px;max-height:8rem;background:var(--surface)}
+#inputBox:focus{outline:none;border-color:var(--grey-4)}
+#sendBtn{border:0;border-radius:22px;background:var(--red);color:#fff;font-weight:700;padding:10px 18px;flex-shrink:0;height:44px}
+#sendBtn:active{background:var(--red-dark)}
+
+/* ---------- device check ---------- */
+.sheet-wrap{position:fixed;inset:0;background:rgba(46,49,50,.35);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+@media (min-width:700px){.sheet-wrap{align-items:center}}
+.sheet{width:100%;max-width:520px;max-height:88dvh;overflow-y:auto;background:var(--surface);border-radius:18px 18px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+@media (min-width:700px){.sheet{border-radius:18px}}
+.sheet h2{margin:0 0 4px;font-size:18px}
+.sheet .lead{margin:0 0 14px;color:var(--ink-soft);font-size:14.5px}
+.checks{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:8px}
+.checks li{display:flex;gap:10px;align-items:flex-start;font-size:15px;background:var(--bg);border-radius:10px;padding:10px 12px}
+.checks .ic{width:22px;flex-shrink:0;text-align:center}
+.checks small{display:block;color:var(--grey-5);font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.btn-soft{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 14px;font-weight:600;font-size:14.5px}
+#dcResult{font-size:14.5px;margin:0 0 12px;min-height:1.5em}
+#dcDetails{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--bg);border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;color:var(--ink-soft);margin:0 0 12px}
+</style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-indigo-100 via-amber-50 to-rose-100 flex justify-center p-3">
+<body>
 
-<!-- ================= LOGIN SCREEN (shown until the student logs in) ================= -->
-<div id="loginScreen" class="w-full max-w-sm flex flex-col justify-center">
-  <div class="bg-white rounded-3xl shadow-2xl border border-white/60 p-7">
-    <div class="flex flex-col items-center mb-6">
-      <div class="w-16 h-16 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-indigo-900 flex items-center justify-center text-3xl font-bold shadow-md ring-4 ring-white/60">S</div>
-      <div class="mt-3 text-xl font-semibold text-indigo-900">Sam · सैम</div>
-      <div class="text-sm text-slate-500">Tumhara English friend</div>
+<!-- ================= LOGIN ================= -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-head">
+      <div class="avatar big">S</div>
+      <div class="login-title">Sam · <span class="dev">सैम</span></div>
+      <div class="login-tag">Aao, Sam ke saath English seekhein!</div>
     </div>
-
-    <label class="block text-sm font-medium text-slate-700 mb-1">Mobile number</label>
-    <input id="loginNumber" type="tel" inputmode="numeric" autocomplete="username"
-      placeholder="Apna mobile number"
-      class="w-full border border-slate-200 rounded-2xl px-4 py-3 mb-4 focus:outline-none focus:border-indigo-400" />
-
-    <label class="block text-sm font-medium text-slate-700 mb-1">Password</label>
-    <input id="loginPassword" type="password" autocomplete="current-password"
-      placeholder="Apna password"
-      class="w-full border border-slate-200 rounded-2xl px-4 py-3 mb-5 focus:outline-none focus:border-indigo-400" />
-
-    <button id="loginBtn"
-      class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3 rounded-2xl font-semibold shadow-md disabled:opacity-50">
-      Start 🚀
-    </button>
-
-    <div id="loginError" class="hidden mt-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2"></div>
-
-    <div class="mt-5 text-center text-xs text-slate-400">
-      Password bhool gaye? Apne teacher se pucho.
+    <label class="field"><span>Mobile number</span>
+      <input id="loginNumber" type="tel" inputmode="numeric" autocomplete="username" placeholder="Apna mobile number" />
+    </label>
+    <label class="field"><span>Password</span>
+      <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Apna password" />
+    </label>
+    <button id="loginBtn" class="btn-primary">Start</button>
+    <div id="loginError" class="hidden"></div>
+    <div class="login-foot">
+      <span>Password bhool gaye? Apne teacher se pucho.</span>
+      <button class="linkish" id="loginCheckBtn" type="button">🎤 Mic / awaaz check</button>
     </div>
   </div>
 </div>
 
-<!-- ================= MAIN APP (hidden until logged in) ================= -->
-<div id="appRoot" class="hidden w-full max-w-2xl flex-col bg-white rounded-3xl shadow-2xl overflow-hidden border border-white/60" style="height:92vh">
-
-  <!-- Header -->
-  <div class="bg-gradient-to-r from-indigo-700 via-indigo-600 to-violet-600 text-white px-5 py-4 flex items-center gap-3">
-    <div class="w-11 h-11 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-indigo-900 flex items-center justify-center text-xl font-bold shrink-0 shadow-md ring-2 ring-white/40">S</div>
-    <div class="flex-1 min-w-0">
-      <div class="font-semibold leading-tight">Sam · English Friend</div>
-      <div id="headerName" class="text-indigo-200 text-xs">Mission Parivartan</div>
+<!-- ================= APP ================= -->
+<div id="appRoot" class="hidden">
+  <header class="bar">
+    <div class="avatar">S</div>
+    <div class="who">
+      <div class="name">Sam · <span class="dev">सैम</span></div>
+      <div id="headerName" class="sub">Mission Parivartan</div>
     </div>
-    <div id="timerChip" class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100" title="Aaj ka goal: 30 minute">⏱ 0/30 min</div>
-    <button id="voiceBtn" class="text-sm px-3 py-1.5 rounded-full font-medium bg-amber-400 text-indigo-900">🔊 Voice on</button>
-    <button id="logoutBtn" class="text-sm px-2.5 py-1.5 rounded-full font-medium bg-indigo-800/60 text-indigo-100 shrink-0" title="Logout">↪</button>
+    <div id="timerChip" title="Aaj ka goal: 30 minute">⏱ 0/30</div>
+    <button id="voiceBtn" class="icon-btn" title="Sam ki awaaz on/off" aria-label="Voice on">🔊</button>
+    <button id="restartBtn" class="icon-btn" title="Nayi baat shuru karo" aria-label="Restart">↻</button>
+    <div style="position:relative">
+      <button id="menuBtn" class="icon-btn" title="More" aria-label="More" aria-expanded="false">⋮</button>
+      <div id="menu" class="menu hidden">
+        <button id="checkBtn" type="button">🎤 Mic / awaaz check</button>
+        <button id="logoutBtn" type="button">↪ Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-mode="chat" class="tab active">Chat</button>
+    <button data-mode="practice" class="tab">Practice</button>
+    <button data-mode="reading" class="tab">Reading</button>
+    <button data-mode="writing" class="tab">Writing</button>
+    <button id="progressBtn" class="chip">📊 My Progress</button>
+  </nav>
+
+  <div id="chatArea" aria-live="polite"></div>
+  <div id="noteLine" class="hidden"></div>
+
+  <div class="inputbar">
+    <button id="micBtn" title="Bolo" aria-label="Mic">🎤</button>
+    <textarea id="inputBox" rows="1" placeholder="English mein likho…"></textarea>
+    <button id="sendBtn">Send</button>
   </div>
+</div>
 
-  <!-- Tabs -->
-  <div class="flex gap-1.5 px-3 py-2 bg-indigo-50 overflow-x-auto" id="tabs">
-    <button data-mode="chat" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-indigo-700 text-white">Chat</button>
-    <button data-mode="practice" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Practice</button>
-    <button data-mode="reading" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Reading</button>
-    <button data-mode="writing" class="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-indigo-700 border border-indigo-200">Writing</button>
-    <button id="progressBtn" class="text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-amber-400 text-indigo-900">📊 My Progress</button>
-    <button id="restartBtn" class="text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium bg-white text-slate-500 border border-slate-200 ml-auto">Restart</button>
-  </div>
-
-  <!-- Chat area -->
-  <div id="chatArea" class="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gradient-to-b from-amber-50/80 to-orange-50/50"></div>
-
-  <!-- Note -->
-  <div id="noteLine" class="hidden px-4 py-2 text-xs text-amber-700 bg-amber-100"></div>
-
-  <!-- Input -->
-  <div class="p-3 bg-white border-t border-slate-100 flex items-end gap-2">
-    <button id="micBtn" class="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600" title="Tap to speak">🎤</button>
-    <textarea id="inputBox" rows="1" placeholder="Type your answer in English…" class="flex-1 resize-none border border-slate-200 rounded-2xl px-4 py-2.5 focus:outline-none focus:border-indigo-400" style="max-height:8rem"></textarea>
-    <button id="sendBtn" class="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-5 py-2.5 rounded-2xl font-medium shrink-0 disabled:opacity-40 shadow-md">Send</button>
+<!-- ================= DEVICE CHECK ================= -->
+<div id="deviceCheck" class="sheet-wrap hidden" role="dialog" aria-modal="true" aria-labelledby="dcTitle">
+  <div class="sheet">
+    <h2 id="dcTitle">Mic / awaaz check</h2>
+    <p class="lead">Yeh dikhata hai ki is phone ya laptop par Sam ka mic aur awaaz chalega ya nahi.</p>
+    <ul class="checks" id="dcList"></ul>
+    <div class="row">
+      <button class="btn-soft" id="dcVoice" type="button">🔊 Awaaz test</button>
+      <button class="btn-soft" id="dcMic" type="button">🎤 Mic test</button>
+      <button class="btn-soft" id="dcCopy" type="button">📋 Details copy</button>
+    </div>
+    <p id="dcResult"></p>
+    <pre id="dcDetails"></pre>
+    <button class="btn-primary" id="dcClose" type="button">Theek hai</button>
   </div>
 </div>
 
@@ -83,12 +195,11 @@
 let student = null;   // filled in after login: {student_id, name, class, district, xp_total}
 let authToken = null; // signed login token, sent with every request
 
-// Sam already knows their name now, so he no longer has to ask for it.
+// Fallback opening if the server can't be reached (normally the server sends it).
 function greetingText(){
   const first = student && student.name ? String(student.name).trim().split(/\s+/)[0] : null;
-  return first
-    ? "Hello " + first + "! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nBatao, aaj tumhara din kaisa tha?"
-    : "Hello! 😊 Main hoon Sam (सैम), tumhara English friend. Aaj hum aaram se baat karenge. Don't worry about mistakes — mistakes are good! ✨\n\nLet's start easy. What is your name?";
+  return (first ? "Hello " + first + "! 😊 " : "Hello! 😊 ") +
+    "Main hoon Sam (सैम). Aao, saath mein English seekhein — aaram se, bina dar ke. Mistakes are good! ✨\n\nBatao, aaj tumhara din kaisa tha?";
 }
 
 const MODE_MESSAGE = {
@@ -103,7 +214,9 @@ let mode = "chat";
 let loading = false;
 let speakOn = true;
 let listening = false;
+let recog = null;
 const GOAL_MIN = 30;
+let chosenVoice = null;
 // Memory (Phase 2): which saved session this chat belongs to, and practice time.
 let sessionId = null;      // null = not saving (database unavailable)
 let todayPriorSecs = 0;    // practice time today from earlier sessions
@@ -111,15 +224,33 @@ let sessionSecs = 0;       // practice time in this session (from the server)
 let secsAt = 0;            // when sessionSecs was last updated
 let activeNow = false;     // has the student sent anything this session?
 let usedMic = false;       // did the current message come from the microphone?
-let chosenVoice = null;
+let locked = false;        // today's practice limit reached (real students only)
+let voiceWarned = false;   // told them once that this device has no voice
 
-const chatArea = document.getElementById("chatArea");
-const inputBox = document.getElementById("inputBox");
-const sendBtn = document.getElementById("sendBtn");
-const micBtn = document.getElementById("micBtn");
-const voiceBtn = document.getElementById("voiceBtn");
-const noteLine = document.getElementById("noteLine");
-const timerChip = document.getElementById("timerChip");
+const $ = (id) => document.getElementById(id);
+const chatArea = $("chatArea"), inputBox = $("inputBox"), sendBtn = $("sendBtn"), micBtn = $("micBtn"),
+      voiceBtn = $("voiceBtn"), noteLine = $("noteLine"), timerChip = $("timerChip");
+
+// ---------- device facts (for mic / voice help) ----------
+const UA = navigator.userAgent || "";
+const IS_IOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/i.test(UA);
+const IOS_OTHER_BROWSER = IS_IOS && /CriOS|FxiOS|EdgiOS|OPiOS|GSA\//i.test(UA);   // Chrome/Firefox/Edge/Google app on iPhone
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const KEYBOARD_TIP = "Keyboard ka 🎤 dabakar bhi bol sakte ho.";
+
+// Locked: keep the chat readable, stop new messages until tomorrow.
+function lockForToday(){
+  locked=true;
+  inputBox.disabled=true; sendBtn.disabled=true; micBtn.disabled=true;
+  inputBox.placeholder="Kal phir milte hain! 😊";
+  micBtn.classList.add("off");
+  document.querySelectorAll(".tab").forEach(b=>b.disabled=true);
+  $("progressBtn").disabled=true;
+  $("restartBtn").disabled=true;
+  note("Aaj ka practice time pura ho gaya 🌟 Kal phir milte hain!");
+  chatArea.scrollTop=chatArea.scrollHeight;
+}
 
 // ---------- helpers ----------
 function plain(t){return t.replace(/\*\*/g,"").replace(/\*/g,"").replace(/`/g,"").replace(/^#+\s*/gm,"").replace(/^\s*[-•]\s+/gm,"");}
@@ -138,25 +269,40 @@ function pickVoice(){
 }
 if(window.speechSynthesis){pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}
 
+// iPhone only lets a page talk after a tap: say "nothing" during the first tap.
+let speechUnlocked=false;
+function unlockSpeech(){
+  if(speechUnlocked||!window.speechSynthesis)return;
+  try{const u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);speechUnlocked=true;}catch(e){}
+}
+document.addEventListener("pointerdown",unlockSpeech,{once:true});
+
+function voiceMissing(){
+  if(!window.speechSynthesis) return true;
+  return speechSynthesis.getVoices().length===0;
+}
 function speak(text){
   try{
-    if(!speakOn||!window.speechSynthesis)return;
+    if(!speakOn)return;
+    if(!window.speechSynthesis){warnVoice();return;}
     const u=new SpeechSynthesisUtterance(forSpeech(text));
     if(chosenVoice)u.voice=chosenVoice;
     u.lang=(chosenVoice&&chosenVoice.lang)||"en-IN";
     u.rate=0.92;u.pitch=1.15;
     speechSynthesis.cancel();speechSynthesis.speak(u);
-  }catch(e){}
+    setTimeout(()=>{ if(voiceMissing()) warnVoice(); },1500);
+  }catch(e){warnVoice();}
+}
+function warnVoice(){
+  if(voiceWarned)return; voiceWarned=true;
+  note("Is device par Sam ki awaaz nahi chal rahi. ⋮ → Mic / awaaz check dekho.");
 }
 
 function bubble(role,content){
   const wrap=document.createElement("div");
-  wrap.className="flex "+(role==="user"?"justify-end":"justify-start");
+  wrap.className="msg "+(role==="user"?"user":"sam");
   const b=document.createElement("div");
-  b.className="max-w-[85%] px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed "+
-    (role==="user"
-      ?"bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-br-sm shadow-sm"
-      :"bg-white text-slate-800 border border-amber-100 rounded-bl-sm shadow-sm");
+  b.className="bubble";
   b.textContent=role==="assistant"?plain(content):content;
   wrap.appendChild(b);chatArea.appendChild(wrap);
   chatArea.scrollTop=chatArea.scrollHeight;
@@ -164,10 +310,10 @@ function bubble(role,content){
 }
 
 function typing(on){
-  let t=document.getElementById("typingBubble");
+  let t=$("typingBubble");
   if(on&&!t){
-    t=document.createElement("div");t.id="typingBubble";t.className="flex justify-start";
-    t.innerHTML='<div class="bg-white text-slate-400 border border-amber-100 px-4 py-2.5 rounded-2xl rounded-bl-sm shadow-sm">Sam is typing…</div>';
+    t=document.createElement("div");t.id="typingBubble";t.className="msg sam";
+    t.innerHTML='<div class="bubble typing">Sam likh raha hai…</div>';
     chatArea.appendChild(t);chatArea.scrollTop=chatArea.scrollHeight;
   }else if(!on&&t){t.remove();}
 }
@@ -182,13 +328,8 @@ function updateTimer(){
   // since the last message (capped at 3 min, the same rule the server uses).
   const live = activeNow ? Math.min((Date.now()-secsAt)/1000, 180) : 0;
   const m=Math.floor((todayPriorSecs+sessionSecs+live)/60);
-  if(m>=GOAL_MIN){
-    timerChip.textContent="🔥 "+m+" min";
-    timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-emerald-400 text-emerald-950";
-  }else{
-    timerChip.textContent="⏱ "+m+"/"+GOAL_MIN+" min";
-    timerChip.className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 bg-indigo-600 text-indigo-100";
-  }
+  if(m>=GOAL_MIN){ timerChip.textContent="🔥 "+m+" min"; timerChip.classList.add("goal"); }
+  else { timerChip.textContent="⏱ "+m+"/"+GOAL_MIN; timerChip.classList.remove("goal"); }
 }
 setInterval(updateTimer,15000);
 
@@ -196,10 +337,11 @@ setInterval(updateTimer,15000);
 // inputType: "button" for tab / progress taps; otherwise voice or typed.
 async function send(text, inputType){
   const content=(text!==undefined?text:inputBox.value).trim();
-  if(!content||loading)return;
+  if(!content||loading||locked)return;
   const kind = inputType || (usedMic ? "voice" : "typed");
   usedMic=false;
-  inputBox.value="";note("");
+  inputBox.value="";autoGrow();
+  if(!voiceWarned)note("");
   messages.push({role:"user",content});
   bubble("user",content);
   loading=true;sendBtn.disabled=true;typing(true);
@@ -216,15 +358,19 @@ async function send(text, inputType){
     const reply=(data&&data.text)||"Sorry, kuch problem ho gayi. Please try again!";
     messages.push({role:"assistant",content:reply});
     typing(false);bubble("assistant",reply);speak(reply);
+    if(data && data.limit_reached){ lockForToday(); }
   }catch(e){
     typing(false);
     const fallback="Sorry, network problem lag rahi hai. Please try again!";
     messages.push({role:"assistant",content:fallback});
     bubble("assistant",fallback);
   }finally{
-    loading=false;sendBtn.disabled=false;
+    loading=false;sendBtn.disabled=locked;
   }
 }
+
+function autoGrow(){ inputBox.style.height="auto"; inputBox.style.height=Math.min(inputBox.scrollHeight,128)+"px"; }
+inputBox.addEventListener("input",autoGrow);
 
 // ---------- UI events ----------
 sendBtn.addEventListener("click",()=>send());
@@ -232,91 +378,182 @@ inputBox.addEventListener("keydown",(e)=>{
   if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
 });
 
+function setActiveTab(m){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.mode===m));
+  micBtn.classList.toggle("off",m==="writing"||locked);
+}
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click",()=>{
-    if(loading)return;
+    if(loading||locked)return;
     mode=btn.dataset.mode;
-    document.querySelectorAll(".tab").forEach(b=>{
-      b.className="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium "+
-        (b===btn?"bg-indigo-700 text-white":"bg-white text-indigo-700 border border-indigo-200");
-    });
-    micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg "+
-      (mode==="writing"?"bg-slate-50 text-slate-300":"bg-slate-100 text-slate-600");
+    setActiveTab(mode);
     note("");
     if(MODE_MESSAGE[mode])send(MODE_MESSAGE[mode],"button");
   });
 });
 
-document.getElementById("progressBtn").addEventListener("click",()=>{
+$("progressBtn").addEventListener("click",()=>{
   if(!loading)send("Sam, show my progress card please.","button");
 });
 
-document.getElementById("restartBtn").addEventListener("click",()=>{
-  if(loading)return;
+$("restartBtn").addEventListener("click",()=>{
+  if(loading||locked)return;
   if(window.speechSynthesis)speechSynthesis.cancel();
-  mode="chat";
-  document.querySelectorAll(".tab").forEach((b,i)=>{
-    b.className="tab text-sm px-3 py-1.5 rounded-full whitespace-nowrap font-medium "+
-      (b.dataset.mode==="chat"?"bg-indigo-700 text-white":"bg-white text-indigo-700 border border-indigo-200");
-  });
-  micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";
+  mode="chat"; setActiveTab(mode);
   beginSession(true);   // Restart = a fresh saved session (the last one gets its note)
 });
 
 voiceBtn.addEventListener("click",()=>{
   speakOn=!speakOn;
-  voiceBtn.textContent=speakOn?"🔊 Voice on":"🔇 Voice off";
-  voiceBtn.className="text-sm px-3 py-1.5 rounded-full font-medium "+(speakOn?"bg-amber-400 text-indigo-900":"bg-indigo-500 text-white");
+  voiceBtn.textContent=speakOn?"🔊":"🔇";
+  voiceBtn.classList.toggle("off",!speakOn);
+  voiceBtn.setAttribute("aria-label",speakOn?"Voice on":"Voice off");
   if(!speakOn&&window.speechSynthesis)speechSynthesis.cancel();
 });
 
+// ---------- menu ----------
+const menu=$("menu"), menuBtn=$("menuBtn");
+menuBtn.addEventListener("click",(e)=>{e.stopPropagation();menu.classList.toggle("hidden");menuBtn.setAttribute("aria-expanded",String(!menu.classList.contains("hidden")));});
+document.addEventListener("click",(e)=>{ if(!menu.contains(e.target)&&e.target!==menuBtn){menu.classList.add("hidden");menuBtn.setAttribute("aria-expanded","false");} });
+
 // ---------- mic ----------
+// Clear messages for each problem instead of one "Sun nahi paya".
+function micProblem(code){
+  if(code==="unsupported"||code==="service-not-allowed"){
+    if(IOS_OTHER_BROWSER) return "iPhone par Chrome mein mic nahi chalta. Safari mein kholo, ya "+KEYBOARD_TIP.toLowerCase();
+    return "Is browser mein mic se likhna nahi chalta. "+KEYBOARD_TIP;
+  }
+  if(code==="not-allowed"){
+    if(IS_IOS) return "Mic ki permission band hai. Settings → Safari → Microphone → Allow karo. Ya "+KEYBOARD_TIP.toLowerCase();
+    return "Mic ki permission band hai. Upar address bar ke 🔒 par tap karo → Permissions → Microphone → Allow. Ya "+KEYBOARD_TIP.toLowerCase();
+  }
+  if(code==="no-speech") return "Kuch sunai nahi diya. Mic ke paas thoda saaf bolo, phir try karo.";
+  if(code==="audio-capture") return "Mic nahi mila. Device ka mic check karo, ya type karo.";
+  if(code==="network") return "Voice typing ke liye internet chahiye. Internet check karke phir try karo.";
+  return "Sun nahi paya. Phir se try karo, ya "+KEYBOARD_TIP.toLowerCase();
+}
+function micIdle(){ listening=false; micBtn.classList.remove("listening"); }
 micBtn.addEventListener("click",()=>{
-  if(loading)return;
+  if(loading||locked)return;
   if(mode==="writing"){
     note("Writing practice typing se hoti hai! 😊 Spelling ki practice ke liye. Bolne ke liye Chat ya Practice tab use karo.");
     return;
   }
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){note("Voice typing Chrome browser mein sabse acha chalta hai. Abhi type kar sakte ho!");return;}
+  if(listening&&recog){ try{recog.stop();}catch(e){} return; }   // tap again = stop
+  if(!SR || IOS_OTHER_BROWSER){ note(micProblem("unsupported")); return; }
   try{
-    const r=new SR();
+    const r=new SR(); recog=r;
     r.lang="en-IN";r.interimResults=false;r.maxAlternatives=1;
-    listening=true;
-    micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-emerald-500 text-white";
+    listening=true; micBtn.classList.add("listening"); note("Sun raha hoon… 🎧 bolo!");
     r.onresult=(e)=>{
       const t=e.results[0][0].transcript;
-      inputBox.value=(inputBox.value?inputBox.value+" ":"")+t;
-      usedMic=true;
+      inputBox.value=(inputBox.value?inputBox.value+" ":"")+t; autoGrow();
+      usedMic=true; note("");
     };
-    r.onerror=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";note("Sun nahi paya, phir se try karo ya type karo.");};
-    r.onend=()=>{listening=false;micBtn.className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-lg bg-slate-100 text-slate-600";};
+    r.onerror=(e)=>{ micIdle(); if(e.error!=="aborted") note(micProblem(e.error)); };
+    r.onend=()=>{ micIdle(); if(noteLine.textContent.startsWith("Sun raha hoon")) note(""); };
     r.start();
-  }catch(e){listening=false;}
+  }catch(e){ micIdle(); note(micProblem("unsupported")); }
+});
+
+// ---------- device check ----------
+function voicesNow(){ return window.speechSynthesis ? speechSynthesis.getVoices() : []; }
+// Phones load their voice list a moment after the page: wait up to 1.5 s.
+function voicesReady(){
+  return new Promise((res)=>{
+    if(!window.speechSynthesis||voicesNow().length) return res(voicesNow());
+    const done=()=>res(voicesNow());
+    speechSynthesis.addEventListener("voiceschanged",done,{once:true});
+    setTimeout(done,1500);
+  });
+}
+async function micPermission(){
+  try{ if(navigator.permissions&&navigator.permissions.query){ const p=await navigator.permissions.query({name:"microphone"}); return p.state; } }catch(e){}
+  return "unknown";
+}
+async function micDevices(){
+  try{ if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){ const d=await navigator.mediaDevices.enumerateDevices(); return d.filter(x=>x.kind==="audioinput").length; } }catch(e){}
+  return null;
+}
+function browserName(){
+  if(/CriOS/i.test(UA))return "Chrome (iPhone)"; if(/FxiOS/i.test(UA))return "Firefox (iPhone)"; if(/EdgiOS/i.test(UA))return "Edge (iPhone)";
+  if(/Edg\//i.test(UA))return "Edge"; if(/OPR\//i.test(UA))return "Opera"; if(/Firefox\//i.test(UA))return "Firefox";
+  if(/SamsungBrowser/i.test(UA))return "Samsung Internet"; if(/Chrome\//i.test(UA))return "Chrome"; if(/Safari\//i.test(UA))return "Safari";
+  return "Unknown";
+}
+async function runDeviceCheck(){
+  const list=$("dcList"); list.innerHTML="";
+  const add=(ok,title,detail)=>{ const li=document.createElement("li");
+    li.innerHTML='<span class="ic">'+(ok===true?"✅":ok===false?"❌":"⚠️")+'</span><span><b></b><small></small></span>';
+    li.querySelector("b").textContent=title; li.querySelector("small").textContent=detail||""; list.appendChild(li); };
+  list.innerHTML='<li><span class="ic">⏳</span><span>Check ho raha hai…</span></li>';
+  const v=await voicesReady(), perm=await micPermission(), mics=await micDevices();
+  list.innerHTML="";
+  const enIN=v.some(x=>/en[-_]IN/i.test(x.lang)), hi=v.some(x=>/^hi/i.test(x.lang));
+  const srOk=!!SR && !IOS_OTHER_BROWSER;
+  add(srOk, srOk?"Mic se likhna (voice typing): chalega":"Mic se likhna: is browser mein nahi chalega",
+      srOk?"":(IOS_OTHER_BROWSER?"iPhone par Safari use karo, ya keyboard ka 🎤.":"Keyboard ka 🎤 use karo, ya Chrome / Safari try karo."));
+  add(perm==="granted"?true:perm==="denied"?false:null, "Mic permission: "+({granted:"di hui hai",denied:"band hai",prompt:"pehli baar mic dabane par puchega"}[perm]||"pata nahi chala"),
+      perm==="denied"?"Browser settings mein is site ke liye Microphone → Allow karo.":"");
+  // Before permission, some phones hide the mic list, so "0" only counts once permission is given.
+  if(mics>0) add(true,"Mic hardware: mila","");
+  else if(mics===0&&perm==="granted") add(false,"Mic hardware: nahi mila","Device ka mic kaam kar raha hai? Earphone lagakar try karo.");
+  else add(null,"Mic hardware: Mic test dabakar check karo","");
+  add(!!window.speechSynthesis && v.length>0, window.speechSynthesis?(v.length?"Sam ki awaaz: chalegi ("+v.length+" voices)":"Sam ki awaaz: koi voice install nahi hai"):"Sam ki awaaz: is browser mein nahi",
+      window.speechSynthesis&&v.length?(enIN?"English (India) voice hai.":"English (India) voice nahi; doosri English voice chalegi."):"Device settings mein Text-to-speech engine aur English (India) voice install karo.");
+  add(window.isSecureContext, window.isSecureContext?"Secure connection (https): theek hai":"Secure connection nahi (mic ke liye https chahiye)","");
+  const details=[
+    "Browser: "+browserName(), "Device: "+(IS_IOS?"iPhone/iPad":IS_ANDROID?"Android":"Computer/other"),
+    "SpeechRecognition: "+(SR?"yes":"no")+(IOS_OTHER_BROWSER?" (blocked: non-Safari on iOS)":""),
+    "speechSynthesis: "+(window.speechSynthesis?"yes":"no")+", voices: "+v.length+(enIN?", en-IN":"")+(hi?", hi":""),
+    "Mic permission: "+perm+", mic devices: "+(mics===null?"unknown":mics),
+    "Secure: "+window.isSecureContext, "User agent: "+UA
+  ].join("\n");
+  $("dcDetails").textContent=details; $("dcResult").textContent="";
+}
+function openCheck(){ $("menu").classList.add("hidden"); $("deviceCheck").classList.remove("hidden"); runDeviceCheck(); }
+$("checkBtn").addEventListener("click",openCheck);
+$("loginCheckBtn").addEventListener("click",openCheck);
+$("dcClose").addEventListener("click",()=>{ $("deviceCheck").classList.add("hidden"); });
+$("deviceCheck").addEventListener("click",(e)=>{ if(e.target.id==="deviceCheck") $("deviceCheck").classList.add("hidden"); });
+$("dcVoice").addEventListener("click",()=>{
+  if(!window.speechSynthesis){ $("dcResult").textContent="❌ Is browser mein awaaz nahi hai."; return; }
+  const u=new SpeechSynthesisUtterance("Hello! Main Sam hoon. Kya aapko meri awaaz sunai de rahi hai?");
+  if(chosenVoice)u.voice=chosenVoice; u.lang=(chosenVoice&&chosenVoice.lang)||"en-IN";
+  u.onend=()=>{ $("dcResult").textContent="Awaaz suni? Agar nahi, device ki volume aur Text-to-speech settings check karo."; };
+  u.onerror=(e)=>{ $("dcResult").textContent="❌ Awaaz nahi chali ("+(e.error||"error")+")."; };
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+  $("dcResult").textContent="🔊 Bol raha hoon…";
+});
+$("dcMic").addEventListener("click",()=>{
+  if(!SR||IOS_OTHER_BROWSER){ $("dcResult").textContent="❌ "+micProblem("unsupported"); return; }
+  try{
+    const r=new SR(); r.lang="en-IN"; r.interimResults=false;
+    $("dcResult").textContent="🎤 Kuch bolo, jaise \"Hello Sam\"…";
+    r.onresult=(e)=>{ $("dcResult").textContent="✅ Suna: \""+e.results[0][0].transcript+"\""; };
+    r.onerror=(e)=>{ $("dcResult").textContent="❌ "+micProblem(e.error)+" ("+e.error+")"; };
+    r.start();
+  }catch(e){ $("dcResult").textContent="❌ "+micProblem("unsupported"); }
+});
+$("dcCopy").addEventListener("click",async()=>{
+  try{ await navigator.clipboard.writeText($("dcDetails").textContent); $("dcResult").textContent="📋 Copy ho gaya — tech team ko bhej do."; }
+  catch(e){ const r=document.createRange(); r.selectNodeContents($("dcDetails")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); $("dcResult").textContent="Text select ho gaya — copy karke bhej do."; }
 });
 
 // ---------- login ----------
-const loginScreen   = document.getElementById("loginScreen");
-const appRoot       = document.getElementById("appRoot");
-const loginBtn      = document.getElementById("loginBtn");
-const loginNumber   = document.getElementById("loginNumber");
-const loginPassword = document.getElementById("loginPassword");
-const loginError    = document.getElementById("loginError");
+const loginScreen=$("loginScreen"), appRoot=$("appRoot"), loginBtn=$("loginBtn"),
+      loginNumber=$("loginNumber"), loginPassword=$("loginPassword"), loginError=$("loginError");
 
-function showLoginError(msg){
-  loginError.textContent = msg;
-  loginError.classList.remove("hidden");
-}
+function showLoginError(msg){ loginError.textContent = msg; loginError.classList.remove("hidden"); }
 
 async function doLogin(){
+  unlockSpeech();
   const number = loginNumber.value.trim();
   const pass   = loginPassword.value;
   if(!number || !pass){ showLoginError("Number aur password dono bharo."); return; }
-
   loginError.classList.add("hidden");
   loginBtn.disabled = true;
   loginBtn.textContent = "Checking…";
-
   try{
     const r = await fetch("/api/login",{
       method:"POST",
@@ -324,27 +561,18 @@ async function doLogin(){
       body: JSON.stringify({ login_number: number, password: pass })
     });
     const data = await r.json();
-
-    if(!data || !data.ok){
-      showLoginError((data && data.message) || "Login nahi hua. Phir se try karo.");
-      return;
-    }
-
-    // Remember the login for this browser tab so a refresh doesn't log them out.
-    // sessionStorage (not localStorage) = cleared when the tab closes, which is
-    // safer on a shared or school phone.
+    if(!data || !data.ok){ showLoginError((data && data.message) || "Login nahi hua. Phir se try karo."); return; }
+    // Remember the login for this browser tab only (safer on a shared phone).
     sessionStorage.setItem("sam_token", data.token);
     sessionStorage.setItem("sam_student", JSON.stringify(data.student));
     startApp(data.token, data.student);
-
   }catch(e){
     showLoginError("Network problem. Internet check karke phir try karo.");
   }finally{
     loginBtn.disabled = false;
-    loginBtn.textContent = "Start 🚀";
+    loginBtn.textContent = "Start";
   }
 }
-
 loginBtn.addEventListener("click", doLogin);
 loginPassword.addEventListener("keydown", (e)=>{ if(e.key==="Enter") doLogin(); });
 loginNumber.addEventListener("keydown", (e)=>{ if(e.key==="Enter") loginPassword.focus(); });
@@ -355,16 +583,15 @@ function logout(){
   sessionStorage.removeItem("sam_student");
   location.reload();
 }
-document.getElementById("logoutBtn").addEventListener("click", logout);
+$("logoutBtn").addEventListener("click", logout);
 
 function startApp(token, stu){
   authToken = token;
   student = stu;
   loginScreen.classList.add("hidden");
   appRoot.classList.remove("hidden");
-  appRoot.classList.add("flex");
   const first = stu && stu.name ? String(stu.name).trim().split(/\s+/)[0] : "";
-  document.getElementById("headerName").textContent = first ? first + " · Mission Parivartan" : "Mission Parivartan";
+  $("headerName").textContent = first ? "Hi " + first + "!" : "Mission Parivartan";
   beginSession(false);
 }
 
@@ -400,7 +627,7 @@ async function beginSession(fresh){
     sessionId=(data && data.session_id) || null;
     messages=[{role:"assistant",content:g}];
     bubble("assistant",g);
-    speak(g);   // after a tap (login / Restart) the browser allows speech
+    speak(g);
   }
   if(data){
     todayPriorSecs=data.today_prior_seconds||0;
@@ -409,10 +636,10 @@ async function beginSession(fresh){
   secsAt=Date.now();
   updateTimer();
   loading=false; sendBtn.disabled=false;
+  if(data && data.limit_reached){ lockForToday(); }
 }
 
 // ---------- boot ----------
-// If they logged in earlier in this tab, go straight in.
 (function(){
   const t = sessionStorage.getItem("sam_token");
   const s = sessionStorage.getItem("sam_student");
@@ -420,7 +647,6 @@ async function beginSession(fresh){
     try{ startApp(t, JSON.parse(s)); return; }catch(e){}
   }
   loginScreen.classList.remove("hidden");
-  loginNumber.focus();
 })();
 </script>
 </body>
